@@ -12,23 +12,31 @@
     
     <link rel="stylesheet" href="css/style.css">
 
-    <!-- Firebase SDK (Compat) - Provided by Hosting -->
-    <script src="/__/firebase/12.4.0/firebase-app-compat.js"></script>
-    <script src="/__/firebase/12.4.0/firebase-auth-compat.js"></script>
-    <script src="/__/firebase/12.4.0/firebase-storage-compat.js"></script>
-    <script src="/__/firebase/12.4.0/firebase-remote-config-compat.js"></script>
-    <!-- Firebase Init Script - Provided by Hosting -->
-    <!-- This script initializes firebase app instance -->
-    <script src="/__/firebase/init.js"></script>
-
-    <!-- LIFF SDK -->
+    <!-- 
+      ★ 修正: Firebase SDK (Compat) と init.js をすべて削除
+      (main.js が ESM形式でインポートするため不要)
+    -->
+    
+    <!-- LIFF SDK (これは必要) -->
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js" charset="utf-8"></script>
     
-    <!-- ★ 修正: xintegrity -> integrity -->
+    <!-- html2canvas (これは必要) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" xintegrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tYHuRgEXEBOBS6qqSL9KxXfGPRCRHpTAfUuiQQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     <!-- Global Helper Functions -->
     <script>
+        // ★★★ ここから修正 ★★★
+        // エラーフォールバック用のHTMLエスケープ関数を、このスクリプト内で定義します
+        function escapeHtmlFallback(unsafe) {
+            if (typeof unsafe !== 'string') return '';
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
         // Define fallback functions in global scope EARLY
         function initializeAppFailureFallback(errorMessage) {
             console.error("[initializeAppFailureFallback] Triggered with:", errorMessage);
@@ -36,15 +44,10 @@
             if (loadingScreen) loadingScreen.style.display = 'none';
             const bodyElement = document.body || document.createElement('body'); // Ensure body exists
             // Escape the error message before inserting into HTML
-            const safeErrorMessage = escapeHtmlFallback(errorMessage);
+            const safeErrorMessage = escapeHtmlFallback(errorMessage); // ★ これで動作するようになります
             bodyElement.innerHTML = `<div style="padding: 20px; text-align: center; color: red; background-color: #fff0f0; border: 1px solid red; border-radius: 8px; max-width: 600px; margin: 20px auto;"><h2>アプリケーションエラー</h2><p>${safeErrorMessage}</p><p>時間をおいて再度お試しください。(LIFF SDKの読み込みエラーの場合、LINE Developers Consoleの設定を確認してください)</p></div>`;
             if (!document.body) document.documentElement.appendChild(bodyElement);
             bodyElement.style.cssText = `display: flex; justify-content: center; align-items: flex-start; padding-top: 50px; min-height: 100vh;`;
-        }
-
-        function escapeHtmlFallback(unsafe) {
-             if (typeof unsafe !== 'string') return '';
-             return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;").replace(/\//g, "&#x2F;");
         }
     </script>
 
@@ -217,79 +220,24 @@
                 <button id="refine-image-btn" class="btn-dark">変更を反映する</button>
              </div>
              
-             <!-- ★★★ 修正: 2つのボタンに分離 ★★★ -->
              <!-- 1. お気に入り保存ボタン (DB保存) -->
              <button id="save-generated-image-to-db-btn" class="btn-primary no-print">この合成画像を保存する</button>
              <!-- 2. 画面共有ボタン (html2canvas) -->
              <button id="share-phase6-btn" class="btn-secondary no-print">結果を保存してLINEで共有</button>
              
-             <!-- ★ 修正: 戻るボタンのインラインスタイルを削除 -->
              <button id="back-to-proposal-btn" class="btn-outline">提案に戻る</button>
          </div>
     </div>
 
-    <!-- App Scripts (Load at the end, NO type="module") -->
-    <script src="js/ui.js"></script>
-    <script src="js/main.js"></script> <!-- public/js/main.js (現在エディタにあるもの) -->
+    <!-- 
+      ★ 修正: main.js のみ type="module" で読み込む
+    -->
+    <script src="js/main.js" type="module"></script> 
 
-    <!-- Initialization Trigger -->
-    <script>
-        function checkFirebaseAndInit() {
-            // Check if firebase app instance is initialized by /__/firebase/init.js
-            // Also check if other necessary components are ready globally
-            if (typeof firebase !== 'undefined' && typeof firebase.app === 'function' && firebase.app() && // Check if firebase app is initialized
-                typeof liff !== 'undefined' &&
-                typeof main === 'function' &&
-                typeof changePhase === 'function')
-            {
-                console.log("Firebase App and other components ready. Setting up Auth listener...");
-                // Now it's safer to access firebase.auth()
-                firebase.auth().onAuthStateChanged(user => {
-                    if (user) {
-                        console.log("Firebase Auth ready with user:", user.uid);
-                        // Only call main once after auth is ready
-                        if (!window.mainCalled) {
-                            window.mainCalled = true;
-                            console.log("Calling main()...");
-                            main(); // Call the main function from main.js
-                        }
-                    } else {
-                        // User is signed out. Attempt anonymous sign-in if not already trying.
-                        if (!window.signingInAnonymously) {
-                             window.signingInAnonymously = true;
-                             console.log("No Firebase user, attempting anonymous sign-in...");
-                             firebase.auth().signInAnonymously().catch((error) => {
-                                 console.error("Anonymous sign-in failed:", error);
-                                 // Use the global error display function
-                                 initializeAppFailureFallback("Firebase匿名認証に失敗しました: " + error.message);
-                             }).finally(() => {
-                                window.signingInAnonymously = false;
-                             });
-                        }
-                    }
-                });
-            } else {
-                console.warn("Firebase App or other components not ready yet, will retry...");
-                 // Critical errors (should not happen if Hosting is configured correctly)
-                 if (document.readyState === 'complete' && typeof firebase === 'undefined') {
-                     initializeAppFailureFallback("Firebase SDK の読み込みに失敗しました。Hosting設定を確認してください。");
-                     return; // Stop retrying
-                 }
-                  if (document.readyState === 'complete' && typeof liff === 'undefined') {
-                     initializeAppFailureFallback("LIFF SDK の読み込みに失敗しました。ネットワーク接続またはLIFF設定を確認してください。");
-                     return; // Stop retrying
-                 }
-                setTimeout(checkFirebaseAndInit, 150); // Retry
-            }
-        }
+    <!-- 
+      ★ 修正: Initialization Trigger は main.js が type="module" で読み込まれた後、
+      そのファイル内で実行されるため、ここからは削除します。
+    -->
 
-        // Start checking after the DOM is loaded
-        document.addEventListener('DOMContentLoaded', () => {
-             console.log("DOMContentLoaded fired. Starting initialization check...");
-             window.mainCalled = false; // Flag to ensure main() is called only once
-             window.signingInAnonymously = false; // Flag for anonymous sign-in attempt
-             checkFirebaseAndInit(); // Start the check loop
-        });
-    </script>
 </body>
 </html>

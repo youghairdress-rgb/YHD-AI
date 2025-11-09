@@ -24,6 +24,10 @@
         "function": "refineHairstyleImage"
       },
       {
+        "source": "/createFirebaseCustomToken",
+        "function": "createFirebaseCustomToken"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

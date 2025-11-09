@@ -10,11 +10,14 @@ const {onRequest} = require("firebase-functions/v2/https");
 const {defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+// ★ 追記: Firebase Auth と Node.js の https モジュール
+const {getAuth} = require("firebase-admin/auth");
+const https = require("https");
 
-// CORSを有効にする（v2のonRequestではオプションとして渡す）
+// ★ 修正: CORSを有効にする（v2のonRequestではオプションとして渡す）
 const corsOptions = {
   cors: {
-    origin: true, // すべてのオリジンを許可（本番環境ではドメインを指定）
+    origin: true, // ★ 修正: "https://yhd-ai.web.app" から true に変更（開発用にすべてのオリジンを許可）
     methods: ["POST", "GET", "OPTIONS"],
   },
 };
@@ -57,7 +60,7 @@ const AI_RESPONSE_SCHEMA = {
           "properties": {
             "nose": {"type": "STRING", "description": "鼻の特徴 (例: 高い, 丸い)"},
             "mouth": {"type": "STRING", "description": "口の特徴 (例: 大きい, 薄い)"},
-            "eyes": {"type": "STRING", "description": "目の特徴 (例: 二重, つり目)"},
+            "eyes": {"type": "STRING", "description": "目のの特徴 (例: 二重, つり目)"},
             "eyebrows": {"type": "STRING", "description": "眉の特徴 (例: アーチ型, 平行)"},
             "forehead": {"type": "STRING", "description": "おでこの特徴 (例: 広い, 狭い)"},
           },
@@ -564,6 +567,99 @@ exports.helloWorld = onRequest(corsOptions, (req, res) => {
   logger.info("[helloWorld] Hello world endpoint called!");
   res.status(200).send("Hello from Firebase Functions v2!");
 });
+
+// ★★★ ここから追記 (認証用Function) ★★★
+
+/**
+ * LINE AccessToken を検証し、Firebaseカスタムトークンを生成する (v2)
+ * api.js の initializeLiffAndAuth から呼び出される
+ */
+exports.createFirebaseCustomToken = onRequest(
+    corsOptions, // 既存のCORSオプションを流用
+    async (req, res) => {
+      // 1. メソッドとリクエストボディのチェック
+      if (req.method !== "POST") {
+        logger.warn(`[createFirebaseCustomToken] Method Not Allowed: ${req.method}`);
+        res.status(405).json({error: "Method Not Allowed"});
+        return;
+      }
+
+      const {accessToken} = req.body;
+      if (!accessToken) {
+        logger.error("[createFirebaseCustomToken] Bad Request: Missing accessToken.");
+        res.status(400).json({error: "Bad Request", message: "accessToken is required."});
+        return;
+      }
+
+      try {
+        // 2. LINE Profile API (v2.1) を叩き、accessTokenを検証してLINE User IDを取得
+        const lineUserId = await verifyLineTokenAndGetUid(accessToken);
+        if (!lineUserId) {
+             throw new Error("Invalid LINE Access Token.");
+        }
+        logger.info(`[createFirebaseCustomToken] Verified LINE User ID: ${lineUserId}`);
+
+        // 3. Firebase Admin SDK を使い、そのLINE User IDをUIDとしてカスタムトークンを生成
+        // (注: Auth上に同名のUIDを持つユーザーが自動作成される)
+        const customToken = await getAuth().createCustomToken(lineUserId);
+        logger.info(`[createFirebaseCustomToken] Custom token created for UID: ${lineUserId}`);
+
+        // 4. カスタムトークンをクライアントに返す
+        res.status(200).json({customToken: customToken});
+      } catch (error) {
+        logger.error("[createFirebaseCustomToken] Failed to create custom token:", error);
+        if (error.message === "Invalid LINE Access Token.") {
+            // LINEトークンが無効な場合は 401 Unauthorized を返す
+            res.status(401).json({error: "Unauthorized", message: "Invalid LINE Access Token."});
+        } else {
+            // その他のエラー (Firebase Admin SDKエラーなど)
+            res.status(500).json({error: "Internal Server Error", message: error.message});
+        }
+      }
+    },
+);
+
+/**
+ * [補助関数] LINE Profile API を呼び出してトークンを検証し、UIDを取得する
+ * @param {string} accessToken
+ * @return {Promise<string|null>} LINE User ID
+ */
+async function verifyLineTokenAndGetUid(accessToken) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: "api.line.me",
+            path: "/v2/profile",
+            method: "GET",
+            headers: {
+                "Authorization": `Bearer ${accessToken}`,
+            },
+        };
+
+        const req = https.request(options, (res) => {
+            let data = "";
+            res.on("data", (chunk) => { data += chunk; });
+            res.on("end", () => {
+                try {
+                    if (res.statusCode === 200) {
+                        const profile = JSON.parse(data);
+                        resolve(profile.userId); // 成功時、userIdを返す
+                    } else {
+                        // 401 (認証失敗) など
+                        logger.error(`[verifyLineToken] LINE API Error (Status: ${res.statusCode}): ${data}`);
+                        reject(new Error("Invalid LINE Access Token."));
+                    }
+                } catch (e) {
+                     reject(new Error(`Failed to parse LINE profile: ${e.message}`));
+                }
+            });
+        });
+        req.on("error", (e) => {
+            reject(new Error(`LINE API request failed: ${e.message}`));
+        });
+        req.end();
+    });
+}
+// ★★★ 追記ここまで ★★★
 
 
 // --- ユーティリティ: リトライ付きAPI呼び出し ---
