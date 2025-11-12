@@ -1,15 +1,10 @@
 // --- ES Modules 形式で Firebase SDK をインポート ---
 import { getAuth, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 // ▼▼▼ ★★★ 速度改善: uploadBytesResumable をインポート ★★★ ▼▼▼
-import { getStorage, ref, uploadBytes, getDownloadURL, uploadBytesResumable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import { getStorage, ref, getDownloadURL, uploadBytesResumable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 // ★ 修正: Firestoreの機能を追加
 import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-// yhd-db のCloud Functions（認証用）のリージョン
-// const FUNCTIONS_REGION = "asia-northeast1"; // ★ リライト経由のため不要
-// ★ 修正: yhd-ai のプロジェクトID
-// const PROJECT_ID = "yhd-ai"; // ★ リライト経由のため不要
 
 /**
  * LIFFの初期化とFirebaseへの認証（yhd-aiに対して）
@@ -88,17 +83,15 @@ export const initializeLiffAndAuth = (liffId, auth) => {
  * ファイルをFirebase Storageにアップロードする *だけ* の関数。
  * (Firestoreには記録しない)
  * AIへの診断リクエスト（動画など）の一時アップロードに使用します。
- * * ▼▼▼ ★★★ スマホ停止バグ (0%) 修正 ★★★ ▼▼▼
- * 'onProgress' コールバックを削除。
- * 'uploadBytesResumable' タスクに .on() リスナーをアタッチすると、
- * モバイル/LIFF環境で 'await uploadTask' が解決しない（ハングする）問題があるため。
- * * @param {object} storage - Storage (v9 Modular) インスタンス
+ * ▼▼▼ ★★★ スマホでの停止バグ修正: Promiseラップ方式に変更 ★★★ ▼▼▼
+ * @param {object} storage - Storage (v9 Modular) インスタンス
  * @param {string} firebaseUid - 顧客のFirebase UID (保存パス用)
  * @param {File} file - アップロードするファイル
  * @param {string} itemName - ファイルの識別子 (例: 'item-front-video')
+ * @param {(snapshot: object) => void} [onProgress] - (オプション) 進捗コールバック
  * @returns {Promise<{url: string, path: string, itemName: string}>}
  */
-export const uploadFileToStorageOnly = async (storage, firebaseUid, file, itemName) => { // <-- onProgress を削除
+export const uploadFileToStorageOnly = async (storage, firebaseUid, file, itemName, onProgress) => { // <-- onProgress を追加
     if (!storage || !firebaseUid) {
         throw new Error("uploadFileToStorageOnly: Firebase StorageまたはUIDが不足しています。");
     }
@@ -118,27 +111,41 @@ export const uploadFileToStorageOnly = async (storage, firebaseUid, file, itemNa
     // uploadBytes ではなく uploadBytesResumable を使用
     const uploadTask = uploadBytesResumable(storageRef, file);
 
-    // ▼▼▼ ★★★ スマホでの停止バグ修正: .on() リスナーを削除し、Taskを直接 await する ★★★ ▼▼▼
-    try {
-        // 1. .on() リスナーはアタッチ *しない*
-        
-        // 2. タスク（Promise）自体が完了するのを待つ
-        const snapshot = await uploadTask;
-        console.log(`[api.js] UploadTask completed for ${itemName}.`);
-
-        // 3. 完了後、ダウンロードURLを取得する
-        const downloadURL = await getDownloadURL(snapshot.ref);
-        console.log(`[api.js] Storage Only Upload successful for ${itemName}. URL: ${downloadURL}`);
-        
-        // 4. 成功した結果を返す
-        return { itemName: itemName, url: downloadURL, path: filePath };
-
-    } catch (error) {
-        // 途中でエラー（アップロード失敗、URL取得失敗など）が起きた場合
-        console.error(`[api.js] Storage Only Upload failed for ${itemName}:`, error);
-        // エラーを re-throw して、main.js の Promise.all に伝える
-        throw error;
-    }
+    // ▼▼▼ ★★★ スマホでの停止バグ修正: .on() リスナーを Promise でラップ ★★★ ▼▼▼
+    // (await uploadTask; は使わない)
+    return new Promise((resolve, reject) => {
+        uploadTask.on('state_changed',
+            (snapshot) => {
+                // (1) 進捗コールバックを呼び出す
+                if (onProgress) {
+                    try {
+                        onProgress(snapshot);
+                    } catch (e) {
+                        console.warn(`[api.js] onProgress callback failed: ${e.message}`);
+                    }
+                }
+            },
+            (error) => {
+                // (2) エラーハンドリング
+                console.error(`[api.js] Storage Only Upload failed for ${itemName}:`, error);
+                reject(error); // Promise を reject して main.js に伝える
+            },
+            async () => {
+                // (3) 完了ハンドリング
+                try {
+                    console.log(`[api.js] UploadTask completed for ${itemName}.`);
+                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                    console.log(`[api.js] Storage Only Upload successful for ${itemName}. URL: ${downloadURL}`);
+                    
+                    // 成功した結果を resolve
+                    resolve({ itemName: itemName, url: downloadURL, path: filePath });
+                } catch (error) {
+                    console.error(`[api.js] getDownloadURL failed for ${itemName}:`, error);
+                    reject(error); // URL取得失敗
+                }
+            }
+        );
+    });
     // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 };
 // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
@@ -152,72 +159,73 @@ export const uploadFileToStorageOnly = async (storage, firebaseUid, file, itemNa
  * @param {string} firebaseUid - 顧客のFirebase UID
  * @param {File} file - アップロードするファイル
  * @param {string} itemName - ファイルの識別子 (例: 'item-front-photo')
+ * @param {(snapshot: object) => void} [onProgress] - (オプション) 進捗コールバック
  * @returns {Promise<{url: string, path: string, itemName: string}>}
  */
-export const saveImageToGallery = async (firestore, storage, firebaseUid, file, itemName) => {
+export const saveImageToGallery = async (firestore, storage, firebaseUid, file, itemName, onProgress) => { // <-- onProgress を追加
     if (!firestore || !storage || !firebaseUid) {
         throw new Error("saveImageToGallery: FirebaseサービスまたはUIDが不足しています。");
     }
 
     // --- 1. Storageへのアップロード (既存のロジック) ---
     const timestamp = Date.now();
-    // ファイル名の安全化
     const safeFileName = (file.name || 'generated_image.png').replace(/[^a-zA-Z0-9._-]/g, '_');
     
-    // yhdapp (mypage.js) が期待するStorageパス
-    // ★ 修正: パスを `users/{uid}/gallery` に統一
     const filePath = `users/${firebaseUid}/gallery/${timestamp}_${itemName}_${safeFileName}`;
     const storageRef = ref(storage, filePath);
     
     console.log(`[api.js] Uploading ${itemName} to Storage path: ${filePath}`);
 
-    // ▼▼▼ ★★★ スマホ停止バグ修正: 写真も Resumable に変更 ★★★ ▼▼▼
-    let snapshot;
-    try {
-        // uploadBytes の代わりに uploadBytesResumable を使用
+    // ▼▼▼ ★★★ スマホ停止バグ修正: 写真も Resumable に変更 + Promiseラップ ★★★ ▼▼▼
+    return new Promise((resolve, reject) => {
         const uploadTask = uploadBytesResumable(storageRef, file);
 
-        // (注: 写真は高速なので進捗コールバックは省略)
-        
-        // タスクの完了（Promise）を待つ
-        snapshot = await uploadTask; 
-        console.log(`[api.js] Resumable Upload successful for (photo) ${itemName}.`);
-    } catch (uploadError) {
-        console.error(`[api.js] saveImageToGallery - Storage Upload failed for ${itemName}:`, uploadError);
-        throw uploadError; // エラーを re-throw
-    }
+        uploadTask.on('state_changed',
+            (snapshot) => {
+                // (1) 進捗コールバック
+                if (onProgress) {
+                     try {
+                        onProgress(snapshot);
+                    } catch (e) {
+                        console.warn(`[api.js] onProgress callback failed: ${e.message}`);
+                    }
+                }
+            },
+            (uploadError) => {
+                // (2) エラーハンドリング
+                console.error(`[api.js] saveImageToGallery - Storage Upload failed for ${itemName}:`, uploadError);
+                reject(uploadError); // エラーを re-throw
+            },
+            async () => {
+                // (3) 完了ハンドリング
+                try {
+                    console.log(`[api.js] Resumable Upload successful for (photo) ${itemName}.`);
+                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                    console.log(`[api.js] Storage Upload successful for ${itemName}. URL: ${downloadURL}`);
+
+                    // --- 2. Firestoreへの記録 (新規追加) ---
+                    const galleryCollectionPath = `users/${firebaseUid}/gallery`;
+                    
+                    console.log(`[api.js] Writing image info to Firestore path: ${galleryCollectionPath}`);
+                    await addDoc(collection(firestore, galleryCollectionPath), {
+                        url: downloadURL,
+                        createdAt: serverTimestamp() // mypage.js が orderBy("createdAt", "desc") を使っているため
+                    });
+                    console.log(`[api.js] Firestore write successful.`);
+                    
+                    // 成功
+                    resolve({ itemName: itemName, url: downloadURL, path: filePath });
+
+                } catch (dbError) {
+                    console.error(`[api.js] Firestoreへの書き込み、またはgetDownloadURLに失敗しました:`, dbError);
+                    // Storageへのアップロードは成功したがDB書き込みが失敗した場合
+                    reject(new Error(`Storageへの保存には成功しましたが、DBへの記録またはURL取得に失敗しました: ${dbError.message}`));
+                }
+            }
+        );
+    });
     // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
-    
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    console.log(`[api.js] Storage Upload successful for ${itemName}. URL: ${downloadURL}`);
-
-    // --- 2. Firestoreへの記録 (新規追加) ---
-    // yhdapp (mypage.js) が期待するFirestoreコレクションパス
-    const galleryCollectionPath = `users/${firebaseUid}/gallery`;
-    
-    console.log(`[api.js] Writing image info to Firestore path: ${galleryCollectionPath}`);
-    try {
-        await addDoc(collection(firestore, galleryCollectionPath), {
-            url: downloadURL,
-            createdAt: serverTimestamp() // mypage.js が orderBy("createdAt", "desc") を使っているため
-            // (必要に応じて他のメタデータも追加可能)
-            // originalName: file.name,
-            // sourceApp: 'YHD_AI'
-        });
-        console.log(`[api.js] Firestore write successful.`);
-    } catch (dbError) {
-        console.error(`[api.js] Firestoreへの書き込みに失敗しました:`, dbError);
-        // Storageへのアップロードは成功したがDB書き込みが失敗した場合
-        // ここではエラーを投げて呼び出し元に知らせる
-        throw new Error(`Storageへの保存には成功しましたが、ギャラリーDBへの記録に失敗しました: ${dbError.message}`);
-    }
-
-    // ★ 修正: itemName も返すようにする (main.jsの分岐のため)
-    return { itemName: itemName, url: downloadURL, path: filePath };
 };
-
-
-// (注: uploadFileToStorage 関数は saveImageToGallery と uploadFileToStorageOnly に分割・置換されたため削除)
 
 
 /**
