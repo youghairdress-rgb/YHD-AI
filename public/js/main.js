@@ -2,7 +2,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-// ★ 修正: Firestore SDK をインポート
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // --- 作成したモジュールをインポート ---
@@ -26,8 +25,6 @@ import {
 
 import {
     initializeLiffAndAuth,
-    // ★ 修正: uploadFileToStorage を削除
-    // uploadFileToStorage,
     // ★ 修正: saveImageToGallery をインポート
     saveImageToGallery,
     requestAiDiagnosis,
@@ -35,24 +32,29 @@ import {
     requestRefinement
 } from './api.js';
 
-// --- yhd-ai の Firebase 設定 (書き換え済み) ---
+// --- yhd-db の Firebase 設定 (yhdapp/public/admin/firebase-init.js と同じ) ---
+// ▼▼▼ ★★★ ステップ2 修正: 接続先を yhd-db に変更 ★★★ ▼▼▼
 const firebaseConfig = {
-    apiKey: "AIzaSyD7f_GTwM7ee6AgMjwCRetyMNlVKDpb3_4",
-    authDomain: "yhd-ai.firebaseapp.com",
-    projectId: "yhd-ai",
-    storageBucket: "yhd-ai.firebasestorage.app",
-    messagingSenderId: "757347798313",
-    appId: "1:757347798313:web:e64c91b4e8b0e8bfc33b38",
-    measurementId: "G-D26PT4FYPR"
+    apiKey: "AIzaSyCjZcF8GFC4CJMYmpucjJ_yShsn74wDLVw",
+    authDomain: "yhd-db.firebaseapp.com",
+    projectId: "yhd-db",
+    storageBucket: "yhd-db.firebasestorage.app",
+    messagingSenderId: "940208179982",
+    appId: "1:940208179982:web:92abb326fa1dc8ee0b655f",
+    measurementId: "G-RSYFJW3TN6"
 };
+// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 
 
 // --- Global App State ---
 const AppState = {
     // ★ 修正: firestore を AppState に追加
     firebase: { app: null, auth: null, storage: null, firestore: null },
-    // ★ 修正: yhd-ai の LIFF ID (書き換え済み)
-    liffId: '2008345232-pVNR18m1', 
+    // ★★★ 修正箇所 ★★★
+    // yhd-ai プロジェクト用にLINE Developersコンソールで発行した
+    // 新しいLIFF IDに書き換えてください。
+    liffId: '2008345232-pVNR18m1', // (確認済み)
+    // ★★★ 修正箇所 ★★★
     userProfile: {
         displayName: "ゲスト",
         userId: null,       // LIFF User ID
@@ -67,8 +69,6 @@ const AppState = {
     
     // ★★★ アップグレード ステップ2: fileUrls を使う方式に戻す ★★★
     uploadedFileUrls: {}, // Storage の URL
-    // uploadedFilePaths: {}, // (gs:// URI方式はAIが非対応のため廃止)
-    // uploadedFileMimeTypes: {}, // (gs:// URI方式はAIが非対応のため廃止)
 
     selectedProposal: { hairstyle: null, haircolor: null },
     aiDiagnosisResult: null,
@@ -288,8 +288,6 @@ async function handleDiagnosisRequest() {
         // ★★★ アップグレード ステップ2: fileUrls を使う方式に戻す ★★★
         // リセット
         AppState.uploadedFileUrls = {}; 
-        // AppState.uploadedFilePaths = {}; 
-        // AppState.uploadedFileMimeTypes = {};
 
         const uploadPromises = [];
         const fileKeys = Object.keys(AppState.uploadedFiles);
@@ -301,7 +299,7 @@ async function handleDiagnosisRequest() {
             const promise = saveImageToGallery(
                 AppState.firebase.firestore,
                 AppState.firebase.storage,
-                AppState.userProfile.firebaseUid,
+                AppState.userProfile.firebaseUid, // ★修正: ここはFirebaseUID (newUserId) を使う
                 file,
                 key
             ).then(result => {
@@ -310,8 +308,6 @@ async function handleDiagnosisRequest() {
                 
                 // ★★★ アップグレード ステップ2: 返ってきた結果を保存 ★★★
                 AppState.uploadedFileUrls[key] = result.url; // HTTPS URL
-                // AppState.uploadedFilePaths[key] = result.path; // GCS Path (gs://...)
-                // AppState.uploadedFileMimeTypes[key] = file.type || 'application/octet-stream'; // MIME Type
                 
                 return result;
             });
@@ -324,10 +320,6 @@ async function handleDiagnosisRequest() {
 
         // ★★★ アップグレード ステップ2: AIに渡すデータを fileUrls に戻す ★★★
         const requestData = {
-            // fileInfo: { // gs:// URI 方式は廃止
-            //     paths: AppState.uploadedFilePaths,
-            //     mimeTypes: AppState.uploadedFileMimeTypes,
-            // },
             fileUrls: AppState.uploadedFileUrls, // HTTPS URL を渡す方式に戻す
             userProfile: {
                 userId: AppState.userProfile.userId,
@@ -657,7 +649,7 @@ async function handleSaveGeneratedImage() {
         const uploadResult = await saveImageToGallery(
             AppState.firebase.firestore,
             AppState.firebase.storage,
-            AppState.userProfile.firebaseUid,
+            AppState.userProfile.firebaseUid, // ★修正: ここはFirebaseUID (newUserId) を使う
             imageFile,
             `favorite_generated_${Date.now()}`
         );
@@ -744,7 +736,7 @@ async function captureAndShareImage(phaseId, fileName) {
         const uploadResult = await saveImageToGallery(
             AppState.firebase.firestore,
             AppState.firebase.storage,
-            AppState.userProfile.firebaseUid,
+            AppState.userProfile.firebaseUid, // ★修正: ここはFirebaseUID (newUserId) を使う
             generatedFile,
             `capture_${phaseId}_${Date.now()}`
         );
@@ -837,7 +829,7 @@ async function main() {
     let loadingScreenHidden = false;
 
     try {
-        console.log("[main] Initializing Firebase App (yhd-ai)...");
+        console.log("[main] Initializing Firebase App (yhd-db)...");
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const storage = getStorage(app);
@@ -848,10 +840,11 @@ async function main() {
         console.log("[main] Firebase service instances obtained (Auth, Storage, Firestore).");
 
         console.log(`[main] Initializing LIFF and Auth... LIFF ID: ${AppState.liffId}`);
+        // ★★★ 修正: auth (yhd-db) を initializeLiffAndAuth に渡す
         const { user, profile } = await initializeLiffAndAuth(AppState.liffId, auth);
         console.log("[main] LIFF Auth successful.");
-        AppState.userProfile.firebaseUid = user.uid;
-        console.log("[main] Firebase UID:", user.uid);
+        // AppState.userProfile.firebaseUid = user.uid; // ★★★ 修正: (後述)
+        // console.log("[main] Firebase UID:", user.uid); // ★★★ 修正: (後述)
 
         console.log("[main] Parsing URL search parameters...");
         const urlParams = new URLSearchParams(window.location.search);
@@ -861,7 +854,20 @@ async function main() {
         if (adminCustomerId && adminCustomerName) {
             console.log(`[main] Admin parameters found: customerId=${adminCustomerId}, customerName=${adminCustomerName}`);
             AppState.userProfile.viaAdmin = true;
-            AppState.userProfile.adminCustomerName = adminCustomerName; // 管理画面からの名前を保持
+            AppState.userProfile.adminCustomerName = adminCustomerName;
+            
+            // ★★★★★ 重要 ★★★★★
+            // 管理者経由の場合、FirebaseのUID (user.uid) は「管理者」のものです。
+            // しかし、データの保存先は「顧客」のID (adminCustomerId) にする必要があります。
+            // そのため、AppState.userProfile.firebaseUid を adminCustomerId で上書きします。
+            AppState.userProfile.firebaseUid = adminCustomerId;
+            console.warn(`[main] OVERRIDE: Firebase UID set to customerId from URL: ${adminCustomerId}`);
+            // ★★★★★★★★★★★★
+
+        } else {
+            // ★★★ 修正: 顧客が直接アクセスした場合
+            AppState.userProfile.firebaseUid = user.uid; // FirebaseのUID (LINE User IDと同じ)
+            console.log("[main] Firebase UID set from Auth:", user.uid);
         }
 
         console.log("[main] LIFF profile obtained:", profile);

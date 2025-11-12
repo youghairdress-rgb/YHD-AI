@@ -40,9 +40,15 @@ export const initializeLiffAndAuth = (liffId, auth) => {
             }
 
             console.log("[api.js] Firebaseのカスタムトークンを取得します...");
-            // ★ 修正: Function URL直呼び出しから、Hostingリライト経由の相対パスに変更
-            // const functionUrl = `https://${FUNCTIONS_REGION}-${PROJECT_ID}.cloudfunctions.net/createFirebaseCustomToken`;
-            const functionUrl = `/createFirebaseCustomToken`;
+            
+            // ▼▼▼ ★★★ ステップ3 修正: 認証先を yhd-db のFunctionsに変更 ★★★ ▼▼▼
+            // 呼び出し先を、yhd-ai のリライトパス (相対パス) から
+            // yhd-db のCloud Functions (絶対パス) に変更します。
+            
+            // const functionUrl = `/createFirebaseCustomToken`; // 修正前 (yhd-ai 自身)
+            const functionUrl = `https://asia-northeast1-yhd-db.cloudfunctions.net/createFirebaseCustomToken`; // 修正後 (yhd-db)
+            
+            // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
             
             const response = await fetch(functionUrl, {
                 method: 'POST',

@@ -67,7 +67,7 @@ body {
 /* カードスタイル調整 */
 .card {
     background-color: var(--card-bg);
-    padding: 35px 30px; /* パディング微調整 */
+    padding: 35px 20px; /* パディング微調整 */
     border-radius: 24px; /* 角丸を大きく */
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06); /* 影をソフトに */
     width: 100%;
@@ -87,10 +87,11 @@ body {
 }
 
 .main-title {
-    font-size: 24px; /* 26px から 24px に変更 */
+    font-size: 20px; /* 26px から 24px に変更 */
     color: var(--dark-color);
     font-weight: 700; /* 太めに */
     margin-bottom: 10px;
+    line-height:36px;
 }
 
 .description {
