@@ -10,8 +10,9 @@ import {
     hideLoadingScreen,
     setTextContent,
     base64ToBlob,
-    // ★★★ アップグレード ステップ1: 画像圧縮ヘルパーをインポート ★★★
+    // ▼▼▼ ★★★ 速度改善: compressImage のインポートを元に戻す ★★★ ▼▼▼
     compressImage
+    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 } from './helpers.js';
 
 import {
@@ -27,6 +28,9 @@ import {
     initializeLiffAndAuth,
     // ★ 修正: saveImageToGallery をインポート
     saveImageToGallery,
+    // ▼▼▼ ★★★ (方法1) uploadFileToStorageOnly をインポート ★★★ ▼▼▼
+    uploadFileToStorageOnly,
+    // ▲▲▲ ★★★ インポート追加ここまで ★★★ ▲▲▲
     requestAiDiagnosis,
     requestImageGeneration,
     requestRefinement
@@ -87,11 +91,9 @@ function initializeAppUI() {
 
         // main()から渡されたパラメータを使って名前をセット
         // 管理画面経由の場合はその名前、それ以外はLINEのプロフィール名
-        const displayName = AppState.userProfile.viaAdmin
-            ? AppState.userProfile.adminCustomerName
-            : AppState.userProfile.displayName;
-            
-        setTextContent('display-name', displayName || "ゲスト");
+        // ▼▼▼ ★★★ 名前のバグ修正: AppState.userProfile.displayName を直接参照 ★★★ ▼▼▼
+        setTextContent('display-name', AppState.userProfile.displayName || "ゲスト");
+        // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
         
         const genderRadio = document.querySelector(`input[name="gender"][value="${AppState.gender}"]`);
         if (genderRadio) genderRadio.checked = true;
@@ -102,13 +104,14 @@ function initializeAppUI() {
         console.log("[initializeAppUI] Always starting from phase1.");
         changePhase('phase1');
 
+        // ★ 修正: Bootstrap UI に合わせてスタイル調整
         const bodyElement = document.body;
         if (bodyElement) {
-            bodyElement.style.display = 'flex';
-            bodyElement.style.justifyContent = 'center';
-            bodyElement.style.alignItems = 'flex-start';
-            bodyElement.style.paddingTop = '20px';
-            bodyElement.style.minHeight = 'unset';
+            bodyElement.style.display = 'block'; // 'flex' から 'block' へ
+            // bodyElement.style.justifyContent = 'center'; // 不要
+            // bodyElement.style.alignItems = 'flex-start'; // 不要
+            // bodyElement.style.paddingTop = '20px'; // 不要
+            // bodyElement.style.minHeight = 'unset'; // 不要
         } else {
             console.warn("[initializeAppUI] document.body not found.");
         }
@@ -126,10 +129,9 @@ function setupEventListeners() {
     // Phase 1: Start Button
     document.getElementById('start-btn')?.addEventListener('click', () => {
         // AppStateに保存されている最新の名前をセットし直す
-        const displayName = AppState.userProfile.viaAdmin
-            ? AppState.userProfile.adminCustomerName
-            : AppState.userProfile.displayName;
-        setTextContent('display-name', displayName || "ゲスト");
+        // ▼▼▼ ★★★ 名前のバグ修正: AppState.userProfile.displayName を直接参照 ★★★ ▼▼▼
+        setTextContent('display-name', AppState.userProfile.displayName || "ゲスト");
+        // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
         
         const genderRadio = document.querySelector(`input[name="gender"][value="${AppState.gender}"]`);
         if (genderRadio) genderRadio.checked = true;
@@ -154,7 +156,7 @@ function setupEventListeners() {
         if (button && input) {
             button.addEventListener('click', () => !button.disabled && input.click());
             
-            // ★★★ アップグレード ステップ1: 画像圧縮ロジックをここに追加 ★★★
+            // ▼▼▼ ★★★ 速度改善: 画像圧縮ロジックを元に戻す ★★★ ▼▼▼
             input.addEventListener('change', async (event) => { // async に変更
                 try {
                     const file = event.target.files?.[0];
@@ -189,7 +191,7 @@ function setupEventListeners() {
                     
                     // (5) UIを「撮影済み」に変更
                     button.textContent = '✔️ 撮影済み';
-                    button.classList.remove('btn-outline');
+                    button.classList.remove('btn-outline-primary');
                     button.classList.add('btn-success');
                     button.disabled = true; // (disabled = true は維持)
                     if (iconDiv) iconDiv.classList.add('completed');
@@ -203,12 +205,15 @@ function setupEventListeners() {
                     // エラーが起きたらUIを元に戻す
                     button.textContent = '撮影';
                     button.disabled = false;
+                    button.classList.add('btn-outline-primary');
+                    button.classList.remove('btn-success');
                     if (iconDiv) iconDiv.classList.remove('completed');
                 } finally {
                     // inputの値をクリアして、同じファイルが再選択された場合もchangeイベントが発火するようにする
                     event.target.value = null;
                 }
             });
+            // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
         }
     });
 
@@ -262,6 +267,16 @@ function setupEventListeners() {
     // Phase 6: Save to DB Button
     document.getElementById('save-generated-image-to-db-btn')?.addEventListener('click', handleSaveGeneratedImage);
 
+    // ▼▼▼ ★★★ 最終ステップ 修正: 終了ボタンのリスナーを追加 ★★★ ▼▼▼
+    document.getElementById('close-liff-btn')?.addEventListener('click', () => {
+        if (liff) {
+            liff.closeWindow();
+        } else {
+            alert("LIFFの終了に失敗しました。");
+        }
+    });
+    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
     console.log("[setupEventListeners] Setup complete.");
 }
 
@@ -293,29 +308,70 @@ async function handleDiagnosisRequest() {
         const fileKeys = Object.keys(AppState.uploadedFiles);
         let uploadedCount = 0;
 
+        // ▼▼▼ ★★★ 速度改善: 動画用プログレスコールバックを定義 ★★★ ▼▼▼
+        const onUploadProgress = (percentage, itemName) => {
+            const progress = Math.round(percentage);
+            let itemLabel = "動画ファイル";
+            if (itemName.includes('front-video')) itemLabel = "動画(4/5)";
+            if (itemName.includes('back-video')) itemLabel = "動画(5/5)";
+            
+            // UIのステータステキストを更新
+            updateStatusText(`${itemLabel}をアップロード中... ${progress}%`);
+        };
+        // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
         fileKeys.forEach(key => {
             const file = AppState.uploadedFiles[key];
-            // ★ 修正: saveImageToGallery を使用し、firestore と storage を渡す
-            const promise = saveImageToGallery(
-                AppState.firebase.firestore,
-                AppState.firebase.storage,
-                AppState.userProfile.firebaseUid, // ★修正: ここはFirebaseUID (newUserId) を使う
-                file,
-                key
-            ).then(result => {
+            let promise;
+
+            // ▼▼▼ ★★★ 表示不可バグ修正: 動画と写真で呼び出す関数を分岐 ★★★ ▼▼▼
+            if (key.includes('video')) {
+                // --- 動画の場合 ---
+                // Storageにアップロードするだけ（DBには保存しない）
+                console.log(`[handleDiagnosisRequest] Uploading (Storage Only): ${key}`);
+                promise = uploadFileToStorageOnly(
+                    AppState.firebase.storage,
+                    AppState.userProfile.firebaseUid,
+                    file,
+                    key,
+                    onUploadProgress // ★ 速度改善: 進捗コールバックを渡す
+                );
+            } else {
+                // --- 写真の場合 ---
+                // Storageにアップロード + Firestoreにも記録（ギャラリー保存）
+                console.log(`[handleDiagnosisRequest] Uploading (and Saving to Gallery): ${key}`);
+                promise = saveImageToGallery(
+                    AppState.firebase.firestore,
+                    AppState.firebase.storage,
+                    AppState.userProfile.firebaseUid,
+                    file,
+                    key
+                );
+            }
+            // ▲▲▲ ★★★ 分岐ここまで ★★★ ▲▲▲
+
+            // プロミスチェーンでUI更新とURL保存
+            const chainedPromise = promise.then(result => {
                 uploadedCount++;
-                updateStatusText(`ファイルをアップロード中... (${uploadedCount}/${fileKeys.length})`);
+                // ★ 修正: 写真が完了したときだけシンプルなテキストを出す
+                if (result && result.itemName && !result.itemName.includes('video')) {
+                    updateStatusText(`写真(${uploadedCount}/5)をアップロード完了`);
+                }
                 
-                // ★★★ アップグレード ステップ2: 返ってきた結果を保存 ★★★
-                AppState.uploadedFileUrls[key] = result.url; // HTTPS URL
+                // どちらの関数も { url: "..." } を返すので、AIリクエスト用にURLを保存
+                if(result) {
+                    AppState.uploadedFileUrls[key] = result.url; // HTTPS URL
+                }
                 
                 return result;
             });
-            uploadPromises.push(promise);
+            
+            uploadPromises.push(chainedPromise);
         });
 
         await Promise.all(uploadPromises);
-        console.log("[handleDiagnosisRequest] All 5 files uploaded and saved to Firestore.");
+        // ★ 修正: 写真3枚、動画2本がアップロードされたことをログで確認
+        console.log("[handleDiagnosisRequest] All 5 files uploaded (Photos to Gallery, Videos to Storage only).");
         updateStatusText('AIに診断をリクエスト中...');
 
         // ★★★ アップグレード ステップ2: AIに渡すデータを fileUrls に戻す ★★★
@@ -356,7 +412,7 @@ async function handleDiagnosisRequest() {
             // ★ 修正: uploadedFileUrls を見るように変更
             if (button && !AppState.uploadedFileUrls[item.id]) {
                 button.textContent = '撮影';
-                button.classList.add('btn-outline');
+                button.classList.add('btn-outline-primary');
                 button.classList.remove('btn-success');
                 button.disabled = false;
                 if (iconDiv) iconDiv.classList.remove('completed');
@@ -649,7 +705,7 @@ async function handleSaveGeneratedImage() {
         const uploadResult = await saveImageToGallery(
             AppState.firebase.firestore,
             AppState.firebase.storage,
-            AppState.userProfile.firebaseUid, // ★修正: ここはFirebaseUID (newUserId) を使う
+            AppState.userProfile.firebaseUid, // ★修正: ここはFirebaseUID (顧客ID) を使う
             imageFile,
             `favorite_generated_${Date.now()}`
         );
@@ -708,15 +764,18 @@ async function captureAndShareImage(phaseId, fileName) {
         switchColorBtn.style.display = 'none';
     }
 
+    // DOMにローディングテキストを追加
     const loadingText = document.createElement('p');
     loadingText.textContent = '画像を生成中...';
-    loadingText.className = 'capture-loading-text no-print';
+    loadingText.className = 'capture-loading-text no-print'; // 'no-print' をつけておく
     targetElement.appendChild(loadingText);
+    loadingText.style.visibility = 'visible'; // 強制表示
 
     try {
         const canvas = await html2canvas(targetElement, {
             scale: 2,
             useCORS: true,
+            // html2canvas の onclone を使って、クローンされたDOMに対しても非表示を適用
             onclone: (clonedDoc) => {
                 clonedDoc.getElementById(phaseId)?.querySelector('.card')
                     ?.querySelectorAll('.no-print').forEach(btn => btn.style.visibility = 'hidden');
@@ -725,6 +784,9 @@ async function captureAndShareImage(phaseId, fileName) {
                     const clonedSwitchBtn = clonedDoc.getElementById('switch-color-btn');
                     if (clonedSwitchBtn) clonedSwitchBtn.style.display = 'none';
                 }
+                // クローン側ではローディングテキストを非表示にする
+                const clonedLoadingText = clonedDoc.querySelector('.capture-loading-text');
+                if (clonedLoadingText) clonedLoadingText.style.visibility = 'hidden';
             }
         });
 
@@ -736,7 +798,7 @@ async function captureAndShareImage(phaseId, fileName) {
         const uploadResult = await saveImageToGallery(
             AppState.firebase.firestore,
             AppState.firebase.storage,
-            AppState.userProfile.firebaseUid, // ★修正: ここはFirebaseUID (newUserId) を使う
+            AppState.userProfile.firebaseUid, // ★修正: ここはFirebaseUID (顧客ID) を使う
             generatedFile,
             `capture_${phaseId}_${Date.now()}`
         );
@@ -754,6 +816,7 @@ async function captureAndShareImage(phaseId, fileName) {
         console.error("Error capturing or sharing image:", error);
         alert(`画像の保存に失敗しました: ${error.message}`);
     } finally {
+        // 実行後、ボタンとローディングテキストを元に戻す
         buttonsToHide.forEach(btn => btn.style.visibility = 'visible');
         // ★★★ アップグレード 提案②: カラー切替ボタンを元に戻す ★★★
         if (phaseId === 'phase6' && switchColorBtn && switchColorBtn.dataset.otherColorKey) {
@@ -851,38 +914,41 @@ async function main() {
         const adminCustomerId = urlParams.get('customerId');
         const adminCustomerName = urlParams.get('customerName');
         
+        // ▼▼▼ ★★★ 名前のバグ修正: 処理の順番を変更 ★★★ ▼▼▼
+        
+        // (1) 先にLINEプロフィールをAppStateのベースにセット
+        AppState.userProfile = { ...AppState.userProfile, ...profile };
+        AppState.userProfile.userId = profile.userId; // LIFF User ID を確実にセット
+        
         if (adminCustomerId && adminCustomerName) {
+            // (2) 管理者経由の場合、必要な情報で上書き
             console.log(`[main] Admin parameters found: customerId=${adminCustomerId}, customerName=${adminCustomerName}`);
             AppState.userProfile.viaAdmin = true;
             AppState.userProfile.adminCustomerName = adminCustomerName;
             
             // ★★★★★ 重要 ★★★★★
-            // 管理者経由の場合、FirebaseのUID (user.uid) は「管理者」のものです。
-            // しかし、データの保存先は「顧客」のID (adminCustomerId) にする必要があります。
-            // そのため、AppState.userProfile.firebaseUid を adminCustomerId で上書きします。
+            // 保存先(firebaseUid)は「顧客ID」
             AppState.userProfile.firebaseUid = adminCustomerId;
-            console.warn(`[main] OVERRIDE: Firebase UID set to customerId from URL: ${adminCustomerId}`);
-            // ★★★★★★★★★★★★
-
+            // 表示名(displayName)は「顧客名」
+            AppState.userProfile.displayName = adminCustomerName;
+            
+            console.warn(`[main] OVERRIDE: Firebase UID set to customerId: ${adminCustomerId}`);
+            console.warn(`[main] OVERRIDE: DisplayName set to customerName: ${adminCustomerName}`);
+            
         } else {
-            // ★★★ 修正: 顧客が直接アクセスした場合
-            AppState.userProfile.firebaseUid = user.uid; // FirebaseのUID (LINE User IDと同じ)
+            // (3) 顧客が直接アクセスした場合
+            // 保存先(firebaseUid)は「本人のUID」
+            AppState.userProfile.firebaseUid = user.uid;
+            // 表示名(displayName)は「本人のLINE名」
+            AppState.userProfile.displayName = profile.displayName || "ゲスト";
+            
             console.log("[main] Firebase UID set from Auth:", user.uid);
         }
-
-        console.log("[main] LIFF profile obtained:", profile);
-        AppState.userProfile = { ...AppState.userProfile, ...profile };
         
-        // viaAdmin でない場合、LINEプロフィール名を displayName に設定
-        if (!AppState.userProfile.viaAdmin) {
-            AppState.userProfile.displayName = profile.displayName || "ゲスト";
-        } else {
-             // viaAdmin の場合、管理画面からの名前を優先
-             AppState.userProfile.displayName = AppState.userProfile.adminCustomerName;
-        }
-
-        AppState.userProfile.userId = profile.userId; // LIFF User ID を確実にセット
+        // (4) 最終的なユーザー情報をログに出力
         console.log("[main] Final User Info:", AppState.userProfile);
+        
+        // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 
         console.log("[main] Calling initializeAppUI()...");
         initializeAppUI();
