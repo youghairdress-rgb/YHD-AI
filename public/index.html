@@ -22,6 +22,7 @@
     <script>
         // Define fallback functions in global scope EARLY
         
+        // ★ 修正: escapeHtmlFallback をグローバルスコープで定義
         const escapeHtmlFallback = function(unsafe) {
             if (typeof unsafe !== 'string') return '';
             return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;").replace(/\//g, "&#x2F;");
@@ -32,9 +33,11 @@
             const loadingScreen = document.getElementById('loading-screen');
             if (loadingScreen) loadingScreen.style.display = 'none';
             const bodyElement = document.body || document.createElement('body'); // Ensure body exists
-            const safeErrorMessage = escapeHtmlFallback(errorMessage || "不明なエラー");
+            // Escape the error message before inserting into HTML
+            const safeErrorMessage = escapeHtmlFallback(errorMessage || "不明なエラー"); // ★ 修正: エラーメッセージがnullでも動作するように
             bodyElement.innerHTML = `<div style="padding: 20px; text-align: center; color: red; background-color: #fff0f0; border: 1px solid red; border-radius: 8px; max-width: 600px; margin: 20px auto;"><h2>アプリケーションエラー</h2><p>${safeErrorMessage}</p><p>時間をおいて再度お試しください。(LIFF SDKの読み込みエラーの場合、LINE Developers Consoleの設定を確認してください)</p></div>`;
             if (!document.body) document.documentElement.appendChild(bodyElement);
+            // ★ 修正: body のスタイルを再適用
             bodyElement.style.cssText = `display: flex; justify-content: center; align-items: flex-start; padding-top: 50px; min-height: 100vh; background-color: #f8fafc;`;
         }
     </script>
@@ -87,34 +90,34 @@
              <p class="description" style="margin-bottom: 20px;">AI診断のため、指定されたアングルから撮影してください。</p>
              <div class="upload-list">
                  <div id="item-front-photo" class="upload-item">
-                     <!-- (写真) accept="image/*" (変更なし) -->
+                     <!-- 写真: accept="image/*" + capture="user" (変更なし) -->
                      <input type="file" class="file-input" accept="image/*" capture="user" hidden>
                      <div class="upload-icon">📷</div><div class="upload-text"><strong>写真：正面</strong><span>顔がはっきりと</span></div><button class="btn-outline">撮影</button>
                  </div>
                  <div id="item-side-photo" class="upload-item">
-                     <!-- (写真) accept="image/*" (変更なし) -->
+                     <!-- 写真: accept="image/*" + capture="environment" (変更なし) -->
                      <input type="file" class="file-input" accept="image/*" capture="environment" hidden>
                      <div class="upload-icon">📷</div><div class="upload-text"><strong>写真：サイド</strong><span>横顔と髪の長さ</span></div><button class="btn-outline">撮影</button>
                  </div>
                  <div id="item-back-photo" class="upload-item">
-                     <!-- (写真) accept="image/*" (変更なし) -->
+                     <!-- 写真: accept="image/*" + capture="environment" (変更なし) -->
                      <input type="file" class="file-input" accept="image/*" capture="environment" hidden>
                      <div class="upload-icon">📷</div><div class="upload-text"><strong>写真：バック</strong><span>後ろ全体の髪型</span></div><button class="btn-outline">撮影</button>
                  </div>
-                 
-                 <!-- ▼▼▼ ★★★ 修正箇所 (動画) ★★★ ▼▼▼ -->
                  <div id="item-front-video" class="upload-item">
-                     <!-- accept から "image/*" を削除 -->
-                     <input type="file" class="file-input" accept="video/mp4,video/quicktime" capture="environment" style="display:none;">
+                     <!-- ▼▼▼ ★★★ 最終修正 (Android/iOS両対応) ★★★ ▼▼▼ -->
+                     <!-- 動画: accept="video/*" (動画のみ) + capture (値なし) -->
+                     <input type="file" class="file-input" accept="video/*" capture="" hidden>
                      <div class="upload-icon">🎬</div><div class="upload-text"><strong>動画：正面 (3秒)</strong><span>左右に顔を動かす</span></div><button class="btn-outline">撮影</button>
+                     <!-- ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲ -->
                  </div>
                  <div id="item-back-video" class="upload-item">
-                     <!-- accept から "image/*" を削除 -->
-                     <input type="file" class="file-input" accept="video/mp4,video/quicktime" capture="environment" style="display:none;">
+                     <!-- ▼▼▼ ★★★ 最終修正 (Android/iOS両対応) ★★★ ▼▼▼ -->
+                     <!-- 動画: accept="video/*" (動画のみ) + capture (値なし) -->
+                     <input type="file" class="file-input" accept="video/*" capture="" hidden>
                      <div class="upload-icon">🎬</div><div class="upload-text"><strong>動画：バック (3秒)</strong><span>髪全体の動き</span></div><button class="btn-outline">撮影</button>
+                     <!-- ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲ -->
                  </div>
-                 <!-- ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲ -->
-                 
              </div>
              <button id="request-diagnosis-btn" class="btn-dark btn-disabled" disabled>AI診断をリクエスト</button>
          </div>
@@ -233,15 +236,17 @@
              <!-- 2. 画面共有ボタン (html2canvas) -->
              <button id="share-phase6-btn" class="btn-secondary no-print">結果を保存してLINEで共有</button>
              
+             <!-- カラー切替ボタン -->
              <button id="switch-color-btn" class="btn-outline no-print" style="display: none;">
                 <!-- JSでテキストが設定される (例: 「カラー2を試す」) -->
              </button>
              
              <button id="back-to-proposal-btn" class="btn-outline">提案に戻る</button>
 
-                        <button id="close-liff-btn" class="btn btn-secondary w-100 mt-3 no-print">
-                            <i class="fa-solid fa-times me-2"></i> アプリを終了する
-                        </button>
+             <!-- 終了ボタン -->
+             <button id="close-liff-btn" class="btn-secondary btn-secondary-white no-print">
+                 アプリを終了する
+             </button>
          </div>
     </div>
 
