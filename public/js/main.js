@@ -493,6 +493,19 @@ async function handleImageGenerationRequest() {
          return;
     }
 
+    // ★★★ 2025/11/15 修正: ここから追加 ★★★
+    // 診断結果（result）から現在の髪レベルを取得
+    const currentLevel = AppState.aiDiagnosisResult?.hairCondition?.currentLevel;
+    
+    // 提案（proposal）から推奨レベルを取得
+    const recommendedLevel = haircolor.recommendedLevel;
+
+    if (!recommendedLevel || !currentLevel) {
+        alert("画像生成に必要な髪の明るさ情報（現在または推奨）が見つかりません。");
+        return;
+    }
+    // ★★★ 2025/11/15 修正: ここまで追加 ★★★
+
     try {
         if (generateBtn) generateBtn.disabled = true;
         if (generatedImageElement) generatedImageElement.style.opacity = '0.5';
@@ -506,6 +519,9 @@ async function handleImageGenerationRequest() {
             hairstyleDesc: hairstyle.description,
             haircolorName: haircolor.name,
             haircolorDesc: haircolor.description,
+            // ★★★ 2025/11/15 修正: 必須項目(JHCAレベル)を追加 ★★★
+            recommendedLevel: recommendedLevel,
+            currentLevel: currentLevel
         };
 
         const responseData = await requestImageGeneration(requestData);
@@ -595,7 +611,15 @@ async function handleColorSwitchRequest(event) {
     }
 
     const otherColor = AppState.aiProposal.haircolors[otherColorKey];
-    const refinementText = `ヘアカラーを「${otherColor.name}」に変更してください。`;
+    
+    // ★★★ 2025/11/15 修正: JHCAレベルスケールもプロンプトに含める ★★★
+    const recommendedLevel = otherColor.recommendedLevel;
+    if (!recommendedLevel) {
+         alert("切替先のカラーの明るさ情報(recommendedLevel)が見つかりません。");
+         return;
+    }
+    const refinementText = `ヘアカラーを「${otherColor.name}（${recommendedLevel}）」に変更してください。`;
+    // ★★★ 修正ここまで ★★★
     
     // ボタンを無効化
     if (switchColorBtn) {

@@ -70,8 +70,7 @@ const llmApiKey = defineSecret("LLM_APIKEY");
 const imageGenApiKey = defineSecret("IMAGEGEN_APIKEY");
 
 
-// --- AIレスポンスのJSONスキーマ定義 (ステップ1 強化版) ---
-// ★★★ アップグレード 提案①: ファッション提案を追加 ★★★
+// --- ★★★ 2025/11/15 更新: AIレスポンスのJSONスキーマ定義 (JHCAレベルスケール対応) ★★★ ---
 const AI_RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
@@ -96,11 +95,9 @@ const AI_RESPONSE_SCHEMA = {
             "faceShape": {"type": "STRING", "description": "顔の形 (例: 丸顔, 面長, ベース顔, 卵型)"},
             "bodyLine": {"type": "STRING", "description": "ボディライン (例: ストレート, ウェーブ, ナチュラル)"},
             "shoulderLine": {"type": "STRING", "description": "肩のライン (例: なで肩, いかり肩, 標準)"},
-            // ★★★ アップグレード ステップ1: 項目追加 ★★★
             "faceStereoscopy": {"type": "STRING", "description": "顔の立体感 (例: 立体的, 平面的, 標準)"},
             "bodyTypeFeature": {"type": "STRING", "description": "体型の特徴 (例: 上重心(ストレートタイプ), 下重心(ウェーブタイプ), 骨感が目立つ(ナチュラルタイプ))"},
           },
-          // ★★★ アップグレード ステップ1: 必須項目に追加 ★★★
           "required": ["neckLength", "faceShape", "bodyLine", "shoulderLine", "faceStereoscopy", "bodyTypeFeature"],
         },
         "personalColor": {
@@ -114,7 +111,6 @@ const AI_RESPONSE_SCHEMA = {
           },
           "required": ["baseColor", "season", "brightness", "saturation", "eyeColor"],
         },
-        // ★★★ アップグレード ステップ1: 「現在の髪の状態」カテゴリを追加 ★★★
         "hairCondition": {
             "type": "OBJECT",
             "description": "写真（と将来の動画）から分析した現在の髪の状態",
@@ -123,11 +119,14 @@ const AI_RESPONSE_SCHEMA = {
                 "curlType": {"type": "STRING", "description": "クセ (例: 直毛, 波状毛, 捻転毛)"},
                 "damageLevel": {"type": "STRING", "description": "ダメージレベル (例: 低(健康), 中(やや乾燥), 高(要ケア))"},
                 "volume": {"type": "STRING", "description": "毛量 (例: 多い, 普通, 少ない)"},
+                // ★ JHCAレベルスケールのための項目を追加 ★
+                "currentLevel": {"type": "STRING", "description": "JHCAレベルスケールに基づく現在の明るさ (例: (約)10レベル)"}
             },
-            "required": ["quality", "curlType", "damageLevel", "volume"],
+            // ★ 必須項目に追加 ★
+            "required": ["quality", "curlType", "damageLevel", "volume", "currentLevel"],
         },
       },
-      "required": ["face", "skeleton", "personalColor", "hairCondition"], // ★ 必須に追加
+      "required": ["face", "skeleton", "personalColor", "hairCondition"],
     },
     "proposal": {
       "type": "OBJECT",
@@ -162,18 +161,24 @@ const AI_RESPONSE_SCHEMA = {
             "color1": {
               "type": "OBJECT",
               "properties": {
-                "name": {"type": "STRING", "description": "ヘアカラーの名前 (例: ミルクティーベージュ)"},
-                "description": {"type": "STRING", "description": "カラーの説明 (50-100文字程度)"},
+                // ★ 記述例からブランド名を削除 ★
+                "name": {"type": "STRING", "description": "ヘアカラーの名前 (例: ラベンダーアッシュ)"},
+                "description": {"type": "STRING", "description": "カラーの説明 (トレンドやブリーチ要否を含める)"},
+                // ★ JHCAレベルスケールのための項目を追加 ★
+                "recommendedLevel": {"type": "STRING", "description": "JHCAレベルスケールに基づく推奨明るさ (例: 10レベル)"}
               },
-              "required": ["name", "description"],
+              "required": ["name", "description", "recommendedLevel"], // ★ 必須に追加
             },
             "color2": {
               "type": "OBJECT",
               "properties": {
-                "name": {"type": "STRING", "description": "ヘアカラーの名前 (例: コーラルピンク)"},
-                "description": {"type": "STRING", "description": "カラーの説明 (50-100文字程度)"},
+                // ★ 記述例からブランド名を削除 ★
+                "name": {"type": "STRING", "description": "ヘアカラーの名前 (例: ピンクベージュ)"},
+                "description": {"type": "STRING", "description": "カラーの説明 (トレンドやブリーチ要否を含める)"},
+                // ★ JHCAレベルスケールのための項目を追加 ★
+                "recommendedLevel": {"type": "STRING", "description": "JHCAレベルスケールに基づく推奨明るさ (例: 12レベル)"}
               },
-              "required": ["name", "description"],
+              "required": ["name", "description", "recommendedLevel"], // ★ 必須に追加
             },
           },
           "required": ["color1", "color2"],
@@ -199,7 +204,6 @@ const AI_RESPONSE_SCHEMA = {
           },
           "required": ["eyeshadow", "cheek", "lip"],
         },
-        // ★★★ アップグレード 提案①: ファッション提案のスキーマを追加 ★★★
         "fashion": {
           "type": "OBJECT",
           "description": "骨格診断に基づいた似合うファッション提案",
@@ -219,12 +223,12 @@ const AI_RESPONSE_SCHEMA = {
         },
         "comment": {"type": "STRING", "description": "AIトップヘアスタイリストによる総評 (200-300文字程度)"},
       },
-      // ★★★ アップグレード 提案①: 必須項目に追加 ★★★
       "required": ["hairstyles", "haircolors", "bestColors", "makeup", "fashion", "comment"],
     },
   },
   "required": ["result", "proposal"],
 };
+// ▲▲▲ スキーマ定義ここまで ▲▲▲
 
 
 // --- 診断リクエスト関数 (v2) ---
@@ -314,10 +318,33 @@ exports.requestDiagnosis = onRequest(
       // 4. Gemini API リクエストペイロードの作成
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
-      // ★★★ アップグレード 提案①: systemPrompt にファッション提案の指示を追加 ★★★
+      // --- ★★★ 2025/11/15 更新: systemPrompt (FUSIONIST削除、JHCAスケール・トレンドサイト参照) ★★★ ---
+      // --- ★★★ 2025/11/15 バグ修正: ${result.hairCondition.currentLevel} を静的テキストに変更 ★★★ ---
       const systemPrompt = `
 あなたは日本の高名なトップヘアスタイリストAIです。
 顧客から提供された**5つの素材（正面写真、サイド写真、バック写真、正面動画、バック動画）**と性別（${gender}）に基づき、以下のタスクを実行してください。
+
+## A. 重要な定義（厳守）
+
+### A-1. JHCAレベルスケール (明るさの基準)
+髪の明るさ（明度）の診断と提案は、必ず以下の「日本ヘアカラー協会（JHCA）レベルスケール」に基づいて行ってください。
+* 4〜7レベル: 暗い (地毛に近い)
+* 8〜10レベル: やや明るい (ブラウン系)
+* 11〜13レベル: 明るい (ライトブラウン・ベージュ系)
+* 14〜15レベル: かなり明るい (ブリーチが必要な場合が多い)
+
+### A-2. ヘアカラー提案のガイドライン
+ヘアカラーを提案する際は、以下のガイドラインを厳守すること。
+1.  **トレンドの参照:** 提案するヘアカラーの色名は、必ず日本のトレンドスタイル（参考サイト1, 2）を最優先で参照し、顧客に最も似合う一般的な色名（例：ミルクティーベージュ、ラベンダーアッシュ等）を選ぶこと。
+2.  **パーソナルカラー:** 診断したパーソナルカラー（例：ブルベ夏）に最適な色味を提案すること。
+3.  **現実的な施術:** 顧客の「現在の髪の状態（currentLevel, damageLevel）」を基に、ブリーチが必須かどうか、またはブリーチなしでも可能な範囲かを判断し、\`description\` に必ず明記すること。
+
+* 参考サイト1 (トレンド): https://beauty.hotpepper.jp/catalog/
+* 参考サイト2 (トレンド): https://www.ozmall.co.jp/hairsalon/catalog/
+
+---
+
+## B. 実行タスク
 
 1.  **診断 (result)**:
     * **顔 (face)**: 主に正面写真と正面動画から特徴を分析してください。
@@ -329,10 +356,15 @@ exports.requestDiagnosis = onRequest(
     * **【重要】現在の髪の状態 (hairCondition)**:
         * **\`quality\` (髪質)**, **\`curlType\` (クセ)**, **\`damageLevel\` (ダメージ)**, **\`volume\` (毛量)**:
         * **3枚の写真と2本の動画すべて**を詳細に分析してください。特に動画は、髪が動いたときの「しなり方（髪質）」「内側のうねり（クセ）」「ツヤの動き（ダメージ）」「膨らみ方（毛量）」を判断する上で最も重要です。
+        * **【追加】 \`currentLevel\` (現在の明るさ)**: バック写真や動画を基に、**A-1. JHCAレベルスケール** に基づいて現在の髪の明るさを「（約）10レベル」のように厳密に診断してください。
 
-2.  **提案 (proposal)**: 診断結果（特に「現在の髪の状態」と「骨格」）に基づき、以下の提案をしてください。
+2.  **提案 (proposal)**: 診断結果に基づき、以下の提案をしてください。
     * **hairstyles**: 顧客の骨格だけでなく、**現在の髪質やクセ（例：波状毛）でも再現可能か**という観点で、最適なスタイルを2つ提案してください。
-    * **haircolors**: 診断したパーソナルカラーとダメージレベルに基づき、提案してください。
+    * **haircolors**:
+        * **A-2. ヘアカラー提案のガイドライン** に厳密に従い、顧客（パーソナルカラー、現在の髪の状態）に最適で、かつ参考サイトのトレンドに合った色名を2つ提案すること。
+        * \`name\`には「ミルクティーベージュ」「ラベンダーアッシュ」のような、参考サイトに基づいた一般的なトレンドのカラー名を入れること。
+        * \`description\`には、**ブリーチの要否**や施術上の注意点（例：「現在の髪（診断したレベル）からはブリーチ必須です」など）を必ず含めること。
+        * \`recommendedLevel\`には、**A-1. JHCAレベルスケール** に基づく推奨明るさレベルを必ず含めること。
     * **bestColors**: パーソナルカラーに基づき、HEXコード付きで4色提案してください。
     * **makeup**: パーソナルカラーに基づき、提案してください。
     * **fashion**: 診断結果の \`skeleton.bodyTypeFeature\`（骨格タイプ）に基づき、似合うファッションスタイルを2つ、具体的なアイテムを2つ提案してください。
@@ -343,6 +375,7 @@ exports.requestDiagnosis = onRequest(
 
 回答は必ず指定されたJSONスキーマに従い、JSONオブジェクトのみを返してください。前置きやマークダウン（'''json ... '''）は一切含めないでください。
 `;
+      // ▲▲▲ systemPrompt 更新ここまで ▲▲▲
 
       const payload = {
         systemInstruction: {
@@ -356,7 +389,7 @@ exports.requestDiagnosis = onRequest(
         ],
         generationConfig: {
           responseMimeType: "application/json",
-          responseSchema: AI_RESPONSE_SCHEMA,
+          responseSchema: AI_RESPONSE_SCHEMA, // ★ 更新されたスキーマを参照
           // temperature: 0.7, // 必要に応じて調整
         },
       };
@@ -386,10 +419,15 @@ exports.requestDiagnosis = onRequest(
         }
 
         // パースしたJSONをチェック
-        // ★★★ アップグレード 提案①: fashion もチェック ★★★
-        if (!parsedJson.result || !parsedJson.proposal || !parsedJson.result.hairCondition || !parsedJson.proposal.fashion) {
-           logger.error("[requestDiagnosis] Parsed JSON missing required keys (result/proposal/hairCondition/fashion).", {parsed: parsedJson});
-           throw new Error("AIの応答に必要なキー（result, proposal, hairCondition, fashion）が欠けています。");
+        // ★★★ スキーマ変更に合わせてチェック対象を更新 ★★★
+        if (!parsedJson.result || !parsedJson.proposal || 
+            !parsedJson.result.hairCondition || !parsedJson.result.hairCondition.currentLevel || // currentLevelをチェック
+            !parsedJson.proposal.fashion || 
+            !parsedJson.proposal.haircolors || !parsedJson.proposal.haircolors.color1 ||
+            !parsedJson.proposal.haircolors.color1.recommendedLevel // recommendedLevelをチェック
+           ) {
+           logger.error("[requestDiagnosis] Parsed JSON missing required keys (result/proposal/hairCondition/currentLevel/fashion/recommendedLevel).", {parsed: parsedJson});
+           throw new Error("AIの応答に必要なキー（currentLevel, recommendedLevelなど）が欠けています。");
         }
 
         res.status(200).json(parsedJson); // パースしたJSONを返す
@@ -427,11 +465,14 @@ exports.generateHairstyleImage = onRequest(
         hairstyleDesc,
         haircolorName,
         haircolorDesc,
+        // ★★★ JHCAレベルスケール対応 ★★★
+        recommendedLevel, // (例: "10レベル")
+        currentLevel, // (例: "(約)7レベル")
       } = req.body;
 
-      if (!originalImageUrl || !firebaseUid || !hairstyleName || !haircolorName) {
+      if (!originalImageUrl || !firebaseUid || !hairstyleName || !haircolorName || !recommendedLevel || !currentLevel) {
         logger.error("[generateHairstyleImage] Bad Request: Missing data.", {body: req.body});
-        res.status(400).json({error: "Bad Request", message: "Missing required data (originalImageUrl, firebaseUid, hairstyleName, haircolorName)."});
+        res.status(400).json({error: "Bad Request", message: "Missing required data (originalImageUrl, firebaseUid, hairstyleName, haircolorName, recommendedLevel, currentLevel)."});
         return;
       }
 
@@ -466,21 +507,26 @@ exports.generateHairstyleImage = onRequest(
       // PDFの指示書に基づき、顔を変えずに髪型を合成するプロンプトを構築
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
 
+      // --- ★★★ 2025/11/15 更新: 画像生成AIへのプロンプト (JHCAレベル対応) ★★★ ---
       const prompt = `
 （指示書: PDF 2-5ページ）
 **目的:** 元画像の顔の特徴（顔の輪郭、目、鼻、口、肌の質感）を一切変更せず、指定されたヘアスタイルを極めて自然に合成（インペインティング）する。
 **元画像:** [添付された元画像]
+**顧客の現在の髪の明るさ:** ${currentLevel} (JHCAレベルスケール)
 **マスク:** [マスクは添付しない。元画像から顔領域を自動検出し、その顔を**一切変更せず**、髪型だけをインペインティングすること。]
+
 **指示:**
 1.  **品質:** masterpiece, best quality, photorealistic hair, ultra realistic, lifelike hair texture, individual hair strands visible
 2.  **スタイル:** ${hairstyleName} (${hairstyleDesc})
 3.  **カラー:** ${haircolorName} (${haircolorDesc})
-4.  **光:** 元画像の照明（soft natural daylight, bright studio lightingなど）と一致させること。
-5.  **質感:** soft and airy texture, glossy and sleek など、スタイルに合わせた自然な質感。
+4.  **明るさ(最重要):** 提案する髪の明るさは **JHCAレベルスケールの ${recommendedLevel}** である。顧客の現在の明るさ（${currentLevel}）と比較し、現実的な範囲で ${recommendedLevel} の明るさを再現すること。
+5.  **光:** 元画像の照明（soft natural daylight, bright studio lightingなど）と一致させること。
+6.  **質感:** soft and airy texture, glossy and sleek など、スタイルに合わせた自然な質感。
 
 **ネガティブプロンプト:**
 unnatural color, flat, dull, lifeless hair, helmet-like, wig, hat, hair accessories, blurry, deformed, worst quality, (face changed), (skin texture changed), (different person)
 `;
+      // ▲▲▲ プロンプト更新ここまで ▲▲▲
 
       const payload = {
         contents: [
@@ -584,6 +630,7 @@ exports.refineHairstyleImage = onRequest(
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
 
       // ★微調整用の新しいプロンプト★
+      // ★★★ 2025/11/15 更新: 微調整プロンプトにJHCAレベルスケールへの言及を追加 ★★★
       const prompt = `
 **目的:** 添付されたベース画像（ヘアスタイル合成済み）に対して、ユーザーの指示に基づき「髪の毛のみ」を微調整する。
 **ベース画像:** [添付された画像]
@@ -591,11 +638,13 @@ exports.refineHairstyleImage = onRequest(
 **厳格なルール:**
 1.  **顔と背景の保護:** 顔の輪郭、目、鼻、口、肌の質感、背景は**一切変更してはならない**。
 2.  **髪のみ編集:** ユーザーの指示（"${refinementText}"）を、**髪の毛に対してのみ**適用すること。
-3.  **品質:** photorealistic, lifelike hair texture を維持すること。
+3.  **明るさの考慮:** もしユーザーが明るさ（例：「もっと明るく」）について言及した場合、**JHCAレベルスケール**（例：10レベルから12レベルへ）の変更として解釈し、現実的な範囲で適用すること。
+4.  **品質:** photorealistic, lifelike hair texture を維持すること。
 
 **ネガティブプロンプト:**
 (face changed), (skin texture changed), (different person), (background changed), blurry, deformed, worst quality, unnatural color
 `;
+      // ▲▲▲ プロンプト更新ここまで ▲▲▲
 
       const payload = {
         contents: [
