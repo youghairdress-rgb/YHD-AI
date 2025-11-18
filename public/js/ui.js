@@ -122,8 +122,9 @@ export function displayDiagnosisResult(result) {
  * 提案結果（フェーズ5）をHTMLに描画する
  * @param {object} proposal - AIの提案結果オブジェクト
  * @param {function} onProposalClick - 提案カードがクリックされたときのコールバック関数
+ * @param {string | null} inspirationImageUrl - ご希望写真のURL (nullならボタンを非表示)
  */
-export function displayProposalResult(proposal, onProposalClick) {
+export function displayProposalResult(proposal, onProposalClick, inspirationImageUrl) {
     // console.log("[displayProposalResult] Displaying proposal:", proposal);
     const hairstyleContainer = document.getElementById('hairstyle-proposal');
     const haircolorContainer = document.getElementById('haircolor-proposal');
@@ -159,6 +160,20 @@ export function displayProposalResult(proposal, onProposalClick) {
         });
     }
 
+    // ▼▼▼ ★★★ 新規追加: ご希望スタイルカードの表示制御 ★★★ ▼▼▼
+    const inspStyleCard = document.getElementById('inspiration-style-card');
+    if (inspStyleCard) {
+        if (inspirationImageUrl) {
+            console.log("[displayProposalResult] Inspiration image found, showing style card.");
+            inspStyleCard.style.display = 'block';
+            inspStyleCard.addEventListener('click', onProposalClick);
+        } else {
+            console.log("[displayProposalResult] No inspiration image, hiding style card.");
+            inspStyleCard.style.display = 'none';
+        }
+    }
+    // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
+
     if (proposal.haircolors && haircolorContainer) {
         // console.log("[displayProposalResult] Populating haircolors...");
         Object.entries(proposal.haircolors).forEach(([key, color]) => {
@@ -171,6 +186,21 @@ export function displayProposalResult(proposal, onProposalClick) {
             haircolorContainer.appendChild(card);
         });
     }
+
+    // ▼▼▼ ★★★ 新規追加: ご希望カラーカードの表示制御 ★★★ ▼▼▼
+    const inspColorCard = document.getElementById('inspiration-color-card');
+    if (inspColorCard) {
+        if (inspirationImageUrl) {
+            console.log("[displayProposalResult] Inspiration image found, showing color card.");
+            inspColorCard.style.display = 'block';
+            inspColorCard.addEventListener('click', onProposalClick);
+        } else {
+            console.log("[displayProposalResult] No inspiration image, hiding color card.");
+            inspColorCard.style.display = 'none';
+        }
+    }
+    // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
+
 
     if (proposal.bestColors && bestColorsContainer) {
         // console.log("[displayProposalResult] Populating best colors...");
@@ -264,109 +294,3 @@ export function updateCaptureLoadingText(element, text) {
     if (element) element.textContent = text;
     console.log(`[CaptureStatus] ${text}`);
 }
-
-
-// ▼▼▼ ★★★ 修正: 動画撮影モーダル制御 ★★★ ▼▼▼
-
-/**
- * 動画撮影モーダルを表示する
- * @param {string} itemId - 'item-front-video' または 'item-back-video'
- */
-export function showVideoModal(itemId) {
-    const modal = document.getElementById('video-recorder-modal');
-    const title = document.getElementById('video-modal-title');
-    const description = document.getElementById('video-modal-description');
-    
-    if (!modal || !title || !description) {
-         console.error("[showVideoModal] Modal elements not found.");
-         return;
-    }
-
-    if (itemId === 'item-front-video') {
-        title.textContent = '動画撮影 (正面)';
-        // ▼▼▼ ★★★ 修正: 'インカメラで' -> 'アウトカメラで' ★★★ ▼▼▼
-        description.textContent = '顔を左右にゆっくり動かしてください。';
-        // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
-    } else {
-        title.textContent = '動画撮影 (バック)';
-        description.textContent = '髪全体（後ろ姿）を撮影してください。';
-    }
-
-    // ★★★ 修正: モーダルに録画対象のIDを保存 ★★★
-    modal.dataset.currentItemId = itemId;
-
-    // UIを初期状態に戻す
-    updateRecordingUI('idle'); // 'idle' (待機) 状態に
-
-    modal.classList.add('active');
-}
-
-/**
- * 動画撮影モーダルを非表示にする
- */
-export function hideVideoModal() {
-    const modal = document.getElementById('video-recorder-modal');
-    const preview = document.getElementById('video-preview');
-
-    // プレビューのストリームを停止 (重要)
-    if (preview && preview.srcObject) {
-        const stream = preview.srcObject;
-        // nullチェックを追加
-        if (stream.getTracks) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-        preview.srcObject = null;
-        console.log("[hideVideoModal] Camera stream stopped.");
-    }
-
-    if (modal) {
-        modal.classList.remove('active');
-        // ★★★ 修正: 記憶したIDをクリア ★★★
-        delete modal.dataset.currentItemId;
-    }
-    
-    // ★★★ 修正: 閉じる時は必ずUIを 'idle' にリセット ★★★
-    updateRecordingUI('idle');
-}
-
-/**
- * 録画モーダルのUI状態を更新する
- * @param {'idle' | 'recording' | 'processing'} state
- * @param {number} [countdown] - カウントダウンの残り秒数 (recording時のみ)
- */
-export function updateRecordingUI(state, countdown) {
-    const recordBtn = document.getElementById('video-record-btn');
-    const recordBtnText = document.getElementById('video-record-btn-text');
-    const cancelBtn = document.getElementById('video-cancel-btn');
-    const timerDisplay = document.getElementById('video-timer');
-
-    if (!recordBtn || !cancelBtn || !timerDisplay || !recordBtnText) return;
-
-    if (state === 'idle') {
-        recordBtn.disabled = false;
-        cancelBtn.disabled = false;
-        recordBtnText.textContent = '録画開始 (3秒)';
-        recordBtn.classList.remove('recording');
-        recordBtn.classList.remove('btn-disabled'); // 無効化解除
-        timerDisplay.style.display = 'none';
-    } 
-    else if (state === 'recording') {
-        recordBtn.disabled = true; // 録画中は押せない
-        cancelBtn.disabled = true; // 録画中はキャンセル不可
-        recordBtnText.textContent = '録画中...';
-        recordBtn.classList.add('recording');
-        recordBtn.classList.add('btn-disabled'); // 無効化
-        
-        timerDisplay.textContent = String(countdown);
-        timerDisplay.style.display = 'block';
-    } 
-    else if (state === 'processing') {
-        recordBtn.disabled = true;
-        cancelBtn.disabled = true; // 処理中もキャンセル不可
-        recordBtnText.textContent = '処理中...';
-        recordBtn.classList.remove('recording');
-        recordBtn.classList.add('btn-disabled'); // 無効化
-        timerDisplay.style.display = 'none';
-    }
-}
-// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲

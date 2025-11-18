@@ -5,14 +5,12 @@ import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // --- 作成したモジュールをインポート ---
-// ▼▼▼ ★★★ 修正: helpers.js と ui.js から新しい関数をインポート ★★★ ▼▼▼
 import {
     initializeAppFailure,
     hideLoadingScreen,
     setTextContent,
     base64ToBlob,
-    compressImage,
-    recordVideo // ★ 新規
+    compressImage
 } from './helpers.js';
 
 import {
@@ -21,12 +19,8 @@ import {
     displayProposalResult,
     checkAllFilesUploaded,
     checkProposalSelection,
-    updateCaptureLoadingText,
-    showVideoModal, // ★ 新規
-    hideVideoModal, // ★ 新規
-    updateRecordingUI // ★ 新規
+    updateCaptureLoadingText
 } from './ui.js';
-// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 
 import {
     initializeLiffAndAuth,
@@ -64,6 +58,12 @@ const AppState = {
     },
     gender: 'female',
     
+    // ▼▼▼ ★★★ 新規追加: フェーズ2のご要望 ★★★ ▼▼▼
+    userRequestsText: '',       // ご要望テキスト
+    inspirationImageUrl: null,  // ご希望写真のアップロード先URL
+    inspirationImageTask: null, // ご希望写真のアップロードタスク(Promise)
+    // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
+
     /**
      * アップロードタスク（Promise）を保持する。
      * { 'item-front-photo': Promise<{url: string, ...}>, ... }
@@ -131,85 +131,229 @@ function setupEventListeners() {
     document.getElementById('next-to-upload-btn')?.addEventListener('click', () => {
         const selectedGender = document.querySelector('input[name="gender"]:checked');
         if (selectedGender) AppState.gender = selectedGender.value;
+        
+        // ▼▼▼ ★★★ 新規追加: ご要望テキストをAppStateに保存 ★★★ ▼▼▼
+        const requestsInput = document.getElementById('user-requests');
+        if (requestsInput) {
+            AppState.userRequestsText = requestsInput.value || '';
+            console.log("User Requests Text:", AppState.userRequestsText);
+        }
+        // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
+        
         console.log("Gender selected:", AppState.gender);
         changePhase('phase3');
     });
 
-    // ▼▼▼ ★★★ 修正: Phase 3 のイベントリスナーを写真用と動画用に分離 ★★★ ▼▼▼
+    // ▼▼▼ ★★★ 新規追加: フェーズ2 ご希望写真アップロード関連リスナー ★★★ ▼▼▼
+    
+    // 隠された <input> をキック
+    document.getElementById('inspiration-upload-container')?.addEventListener('click', (e) => {
+        // 削除ボタン以外が押されたら input をクリック
+        if (e.target.id !== 'inspiration-delete-btn') {
+            document.getElementById('inspiration-image-input')?.click();
+        }
+    });
+
+    // ファイルが選択された時の処理
+    document.getElementById('inspiration-image-input')?.addEventListener('change', (event) => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            event.target.value = null;
+            return;
+        }
+
+        // 写真ファイル検証
+        if (!file.type.startsWith('image/')) {
+            alert("写真（📷）が選択されていません。\nこの項目では写真ファイルを選択してください。");
+            event.target.value = null;
+            return;
+        }
+
+        // UIを「処理中」に変更
+        const preview = document.getElementById('inspiration-image-preview');
+        const uploadBtn = document.getElementById('inspiration-upload-btn');
+        const deleteBtn = document.getElementById('inspiration-delete-btn');
+        const statusText = document.getElementById('inspiration-upload-status');
+        const titleText = document.getElementById('inspiration-upload-title');
+        
+        if (uploadBtn) uploadBtn.textContent = '処理中...';
+        if (statusText) statusText.textContent = '画像を圧縮中...';
+        if (titleText) titleText.textContent = '写真を選択済み';
+        if (uploadBtn) uploadBtn.style.display = 'block';
+        if (deleteBtn) deleteBtn.style.display = 'none';
+        
+        // AppStateリセット
+        AppState.inspirationImageUrl = null;
+        AppState.inspirationImageTask = null;
+
+        // (1) 圧縮 (Promiseベース)
+        let processingPromise;
+        if (file.type !== 'image/gif') {
+            console.log(`[InspirationUpload] Compressing...`);
+            processingPromise = compressImage(file, 800, 0.7); // 診断用より少し小さめ
+        } else {
+            processingPromise = Promise.resolve(file);
+        }
+
+        // (2) onProgressコールバック
+        const onUploadProgress = (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            if (statusText) statusText.textContent = `ｱｯﾌﾟﾛｰﾄﾞ中 ${Math.round(progress)}%`;
+        };
+
+        // (3) AppState にタスク(Promise)を保存
+        AppState.inspirationImageTask = processingPromise.then(fileToUpload => {
+            if (statusText) statusText.textContent = 'ｱｯﾌﾟﾛｰﾄﾞ中 0%';
+            
+            // プレビューを表示
+            if (preview) preview.src = URL.createObjectURL(fileToUpload);
+
+            // (a) アップロード (Storage Only) - 診断用ではないため
+            console.log(`[InspirationUpload] Starting upload (Storage Only)...`);
+            return uploadFileToStorageOnly(
+                AppState.firebase.storage,
+                AppState.userProfile.firebaseUid,
+                fileToUpload,
+                'inspiration-photo', // 識別子
+                onUploadProgress
+            );
+        })
+        .then(result => {
+            // (4) アップロード完了
+            console.log(`[InspirationUpload] Upload finished.`);
+            if (statusText) statusText.textContent = 'アップロード完了';
+            if (uploadBtn) uploadBtn.style.display = 'none';
+            if (deleteBtn) deleteBtn.style.display = 'block';
+            
+            AppState.inspirationImageUrl = result.url; // URLを保存
+            return result; // Promiseチェーン
+        })
+        .catch(error => {
+            // (5) アップロード失敗
+            console.error(`[InspirationUpload] Error:`, error);
+            alert(`ご希望写真のアップロードに失敗しました: ${error.message}`);
+            // UIを元に戻す
+            resetInspirationUI();
+            throw error; // 上位にエラーを伝播
+        })
+        .finally(() => {
+            // (6) input の値をクリア
+            event.target.value = null;
+        });
+        
+        console.log(`[InspirationUpload] processing task stored.`);
+    });
+    
+    // (6) 削除ボタンのリスナー
+    document.getElementById('inspiration-delete-btn')?.addEventListener('click', resetInspirationUI);
+
+    // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
+
+
+    // ▼▼▼ ★★★ 差し戻し: Phase 3 のリスナーを元の状態（<input>依存）に戻す ★★★ ▼▼▼
     document.querySelectorAll('.upload-item').forEach(item => {
         const button = item.querySelector('button');
-        const input = item.querySelector('.file-input'); // 写真用
+        const input = item.querySelector('.file-input');
         const itemId = item.id;
         const iconDiv = item.querySelector('.upload-icon');
-        
-        const isPhotoItem = itemId.includes('photo');
-        const isVideoItem = itemId.includes('video');
 
-        if (button) {
-            if (isPhotoItem && input) {
-                // (A) 写真アイテムの場合: 従来通り input をキック
-                button.addEventListener('click', () => !button.disabled && input.click());
+        if (button && input) {
+            // (A) ボタンが input をキックする (写真・動画共通)
+            button.addEventListener('click', () => !button.disabled && input.click());
+            
+            // (B) input の 'change' イベントリスナー (写真・動画共通)
+            input.addEventListener('change', (event) => {
                 
-                // 写真用の 'change' イベントリスナー (従来のロジック)
-                input.addEventListener('change', (event) => {
+                if (button.disabled) {
+                     console.warn(`[FileSelected] ${itemId} is already processing.`);
+                     return;
+                }
+
+                const file = event.target.files?.[0];
+                if (!file) {
+                    console.log(`[FileSelected] No file selected for ${itemId}.`);
+                    event.target.value = null;
+                    return;
+                }
+
+                // ▼▼▼ ★★★ 差し戻し: ファイルタイプ検証 (写真/動画の誤選択チェック) ★★★ ▼▼▼
+                const isVideoInput = itemId.includes('video');
+                const isPhotoInput = !isVideoInput;
+                const isVideoFile = file.type.startsWith('video/');
+                const isPhotoFile = file.type.startsWith('image/');
+
+                if (isVideoInput && !isVideoFile) {
+                    alert("動画（🎬）が選択されていません。\n「動画：正面」と「動画：バック」の項目では、写真ではなく動画ファイル（.mov または .mp4）を選択するか、カメラをビデオモードに切り替えて撮影してください。");
+                    button.disabled = false;
+                    event.target.value = null; // inputをクリア
+                    return; // 処理を中断
+                }
+                
+                if (isPhotoInput && !isPhotoFile) {
+                    alert("写真（📷）が選択されていません。\n写真の項目では、動画ではなく写真ファイルを選択してください。");
+                    button.disabled = false;
+                    event.target.value = null; // inputをクリア
+                    return; // 処理を中断
+                }
+                // ▲▲▲ ★★★ 検証ここまで ★★★ ▲▲▲
+
+
+                // (1) UIを「処理中...」に変更
+                button.textContent = '処理中...';
+                button.disabled = true;
+                if (iconDiv) iconDiv.classList.remove('completed'); // アイコンをリセット
+                
+                // AppStateをリセット
+                delete AppState.uploadTasks[itemId];
+                delete AppState.uploadedFileUrls[itemId];
+                checkAllFilesUploaded(false); // 診断ボタンを一時的に無効化
+
+                // (2) 圧縮処理 (Promiseベース)
+                let processingPromise;
+                if (isPhotoFile && file.type !== 'image/gif') { // 'file.type' を使う (isPhotoFile)
+                    console.log(`[FileSelected] ${itemId} (Image): ${file.name}. Compressing...`);
+                    processingPromise = compressImage(file).catch(compressError => {
+                        console.warn(`[FileSelected] ${itemId} compression failed. Using original file.`, compressError);
+                        return file; // 圧縮に失敗しても元のファイルで続行
+                    });
+                } else if (isVideoFile) { // 'file.type' を使う (isVideoFile)
+                    // ★★★ 動画サイズチェック ★★★
+                    const fileSizeMB = file.size / 1024 / 1024;
+                    if (fileSizeMB > 50) { // 50MBを超える場合
+                        alert(`動画ファイルのサイズが ${fileSizeMB.toFixed(1)}MB と非常に大きいです。\nアップロードに時間がかかるか、失敗する可能性があります。\n\n（可能であれば、より短い動画（3〜5秒程度）で再度お試しください）`);
+                    }
+                    processingPromise = Promise.resolve(file); // 動画は圧縮しない
+                } else {
+                    console.log(`[FileSelected] ${itemId} (Other): ${file.name}. Skipping compression.`);
+                    processingPromise = Promise.resolve(file);
+                }
+
+                // (3) 圧縮完了後、アップロードを "開始" (await しない)
+                // (onProgressコールバックを定義)
+                const onUploadProgress = (snapshot) => {
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    if (button) {
+                        button.textContent = `ｱｯﾌﾟﾛｰﾄﾞ中 ${Math.round(progress)}%`;
+                    }
+                };
+                
+                // (4) uploadTask (Promise) を AppState に保存
+                //    processingPromise (圧縮) が終わってから...
+                AppState.uploadTasks[itemId] = processingPromise.then(fileToUpload => {
                     
-                    if (button.disabled) {
-                         console.warn(`[FileSelected] ${itemId} is already processing.`);
-                         return;
-                    }
+                    button.textContent = 'ｱｯﾌﾟﾛｰﾄﾞ中 0%'; // UIを更新
 
-                    const file = event.target.files?.[0];
-                    if (!file) {
-                        console.log(`[FileSelected] No file selected for ${itemId}.`);
-                        event.target.value = null;
-                        return;
-                    }
-
-                    // 写真ファイル検証
-                    if (!file.type.startsWith('image/')) {
-                        // (注: main.js には写真/動画の誤選択チェックがあったが、
-                        //  写真専用 input になったので、 image/* 以外のチェックのみ行う)
-                        alert("写真（📷）が選択されていません。\nこの項目では写真ファイルを選択してください。");
-                        event.target.value = null; // inputをクリア
-                        return; // 処理を中断
-                    }
-
-                    // (1) UIを「処理中...」に変更
-                    button.textContent = '処理中...';
-                    button.disabled = true;
-                    if (iconDiv) iconDiv.classList.remove('completed'); // アイコンをリセット
-                    
-                    // AppStateをリセット
-                    delete AppState.uploadTasks[itemId];
-                    delete AppState.uploadedFileUrls[itemId];
-                    checkAllFilesUploaded(false);
-
-                    // (2) 圧縮処理 (Promiseベース)
-                    let processingPromise;
-                    if (file.type !== 'image/gif') {
-                        console.log(`[FileSelected] ${itemId} (Image): ${file.name}. Compressing...`);
-                        processingPromise = compressImage(file).catch(compressError => {
-                            console.warn(`[FileSelected] ${itemId} compression failed. Using original file.`, compressError);
-                            return file; // 圧縮に失敗しても元のファイルで続行
-                        });
+                    if (isVideoInput) {
+                        // (a) 動画の場合 (Storage Only)
+                        console.log(`[FileSelected] Starting upload (Storage Only): ${itemId}`);
+                        return uploadFileToStorageOnly(
+                            AppState.firebase.storage,
+                            AppState.userProfile.firebaseUid,
+                            fileToUpload,
+                            itemId,
+                            onUploadProgress // 進捗コールバックを渡す
+                        );
                     } else {
-                        console.log(`[FileSelected] ${itemId} (Other): ${file.name}. Skipping compression.`);
-                        processingPromise = Promise.resolve(file);
-                    }
-
-                    // (3) onProgressコールバックを定義
-                    const onUploadProgress = (snapshot) => {
-                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                        if (button) {
-                            button.textContent = `ｱｯﾌﾟﾛｰﾄﾞ中 ${Math.round(progress)}%`;
-                        }
-                    };
-                    
-                    // (4) uploadTask (Promise) を AppState に保存
-                    AppState.uploadTasks[itemId] = processingPromise.then(fileToUpload => {
-                        
-                        button.textContent = 'ｱｯﾌﾟﾛｰﾄﾞ中 0%'; // UIを更新
-
                         // (b) 写真の場合 (Save to Gallery)
                         console.log(`[FileSelected] Starting upload (Save to Gallery): ${itemId}`);
                         return saveImageToGallery(
@@ -220,78 +364,92 @@ function setupEventListeners() {
                             itemId,
                             onUploadProgress // 進捗コールバックを渡す
                         );
+                    }
 
-                    }).then(result => {
-                        // (5) アップロード完了時 (Promise 成功)
-                        console.log(`[UploadSuccess] ${itemId} finished.`);
-                        button.textContent = '✔️ 撮影済み';
-                        button.classList.remove('btn-outline');
-                        button.classList.add('btn-success');
-                        if (iconDiv) iconDiv.classList.add('completed');
-                        
-                        AppState.uploadedFileUrls[itemId] = result.url; // URLを保存
-                        checkAllFilesUploaded(areAllFilesUploaded()); // 全て揃ったか再チェック
-                        
-                        return result; // Promiseチェーンのために結果を返す
-
-                    }).catch(error => {
-                        // (6) アップロード失敗時 (Promise 失敗)
-                        console.error(`[UploadFailed] Error processing file for ${itemId}:`, error);
-                        alert(`「${itemId}」のアップロードに失敗しました: ${error.message}`);
-                        
-                        // UIを元に戻す
-                        button.textContent = '撮影';
-                        button.disabled = false;
-                        button.classList.add('btn-outline');
-                        button.classList.remove('btn-success');
-                        if (iconDiv) iconDiv.classList.remove('completed');
-
-                        // AppStateをリセット
-                        delete AppState.uploadTasks[itemId];
-                        delete AppState.uploadedFileUrls[itemId];
-                        checkAllFilesUploaded(false);
-                        
-                        throw error; 
+                }).then(result => {
+                    // (5) アップロード完了時 (Promise 成功)
+                    console.log(`[UploadSuccess] ${itemId} finished.`);
+                    button.textContent = '✔️ 撮影済み';
+                    button.classList.remove('btn-outline');
+                    button.classList.add('btn-success');
+                    if (iconDiv) iconDiv.classList.add('completed');
                     
-                    }).finally(() => {
-                        // (7) 成功・失敗問わず、input の値をクリア
-                        event.target.value = null;
-                    });
+                    AppState.uploadedFileUrls[itemId] = result.url; // URLを保存
+                    checkAllFilesUploaded(areAllFilesUploaded()); // 全て揃ったか再チェック
                     
-                    console.log(`[FileSelected] ${itemId} processing task stored.`);
+                    return result; // Promiseチェーンのために結果を返す
+
+                }).catch(error => {
+                    // (6) アップロード失敗時 (Promise 失敗)
+                    console.error(`[UploadFailed] Error processing file for ${itemId}:`, error);
+                    alert(`「${itemId}」のアップロードに失敗しました: ${error.message}`);
+                    
+                    // UIを元に戻す
+                    button.textContent = '撮影';
+                    button.disabled = false;
+                    button.classList.add('btn-outline');
+                    button.classList.remove('btn-success');
+                    if (iconDiv) iconDiv.classList.remove('completed');
+
+                    // AppStateをリセット
+                    delete AppState.uploadTasks[itemId];
+                    delete AppState.uploadedFileUrls[itemId];
+                    checkAllFilesUploaded(false);
+                    
+                    // エラーを re-throw して、上位の catch (Promise.all) に伝える
+                    throw error; 
+                
+                }).finally(() => {
+                    // (7) 成功・失敗問わず、input の値をクリア
+                    event.target.value = null;
                 });
                 
-            } else if (isVideoItem) {
-                // (B) 動画アイテムの場合: 録画モーダルをキック
-                // (input.addEventListener('change', ...) は設定しない)
-                button.addEventListener('click', () => {
-                    if (button.disabled) return;
-                    
-                    // ★★★ 新規: モーダル表示ハンドラを呼ぶ ★★★
-                    handleVideoRecordClick(itemId);
-                });
-            }
+                console.log(`[FileSelected] ${itemId} processing task stored.`);
+            });
         }
     });
-
-    // ★★★ 新規: 録画モーダルのボタンリスナー ★★★
-    document.getElementById('video-record-btn')?.addEventListener('click', handleStartRecording);
-    document.getElementById('video-cancel-btn')?.addEventListener('click', handleCancelRecording);
-    
-    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+    // ▲▲▲ ★★★ 差し戻しここまで ★★★ ▲▲▲
 
 
     // Phase 3: Diagnosis Button
     document.getElementById('request-diagnosis-btn')?.addEventListener('click', handleDiagnosisRequest);
 
-    // Phase 4: Next Button
-    document.getElementById('next-to-proposal-btn')?.addEventListener('click', () => {
+    // ▼▼▼ ★★★ 修正: Phase 4 -> 5 移行時にご希望写真のアップロードを待機 ★★★ ▼▼▼
+    // Phase 4: Next Button (async に変更)
+    document.getElementById('next-to-proposal-btn')?.addEventListener('click', async () => {
         // AppState をリセットし、UIを描画
         AppState.selectedProposal = { hairstyle: null, haircolor: null };
         checkProposalSelection(false);
-        displayProposalResult(AppState.aiProposal, handleProposalSelection);
+        
+        // (1) もし ご希望写真タスク(Promise) が存在し、まだURLがセットされていないなら、ここで待機
+        if (AppState.inspirationImageTask && !AppState.inspirationImageUrl) {
+            console.log("[next-to-proposal-btn] Waiting for inspiration image upload...");
+            try {
+                // (念のためステータスを更新)
+                const statusText = document.getElementById('inspiration-upload-status');
+                if (statusText) statusText.textContent = 'アップロード完了待機中...';
+                
+                await AppState.inspirationImageTask; // 完了を待つ
+                
+                console.log("[next-to-proposal-btn] Inspiration image upload confirmed.");
+            } catch (uploadError) {
+                console.warn("[next-to-proposal-btn] Inspiration image upload failed, proceeding without it.", uploadError);
+                // AppState.inspirationImageUrl は null のまま
+            }
+        }
+        
+        // (2) displayProposalResult を呼び出す
+        // (この時点で AppState.inspirationImageUrl がセットされているはず、または失敗して null のまま)
+        displayProposalResult(
+            AppState.aiProposal, 
+            handleProposalSelection,
+            AppState.inspirationImageUrl // ご希望写真のURL (nullの場合、ui.js側でボタンを非表示にする)
+        );
+        // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
         changePhase('phase5');
     });
+    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 
     // Phase 4: Save Button
     document.getElementById('save-phase4-btn')?.addEventListener('click', () => {
@@ -404,6 +562,7 @@ async function handleDiagnosisRequest() {
                 firebaseUid: AppState.userProfile.firebaseUid
             },
             gender: AppState.gender
+            // ★ ご要望テキストと写真は「提案」ではなく「画像生成」時にのみ使うため、ここでは送らない
         };
         
         // (6) Cloud Function を呼び出す
@@ -485,43 +644,84 @@ async function handleImageGenerationRequest() {
         return;
     }
 
-    const hairstyle = AppState.aiProposal?.hairstyles?.[AppState.selectedProposal.hairstyle];
-    const haircolor = AppState.aiProposal?.haircolors?.[AppState.selectedProposal.haircolor];
-
-    if (!hairstyle || !haircolor) {
-         alert("選択された提案の詳細の取得に失敗しました。");
-         return;
-    }
-
-    // ★★★ 2025/11/15 修正: ここから追加 ★★★
-    // 診断結果（result）から現在の髪レベルを取得
-    const currentLevel = AppState.aiDiagnosisResult?.hairCondition?.currentLevel;
+    // ▼▼▼ ★★★ 修正: 選択キーに基づいて送信するデータを決定 ★★★ ▼▼▼
     
-    // 提案（proposal）から推奨レベルを取得
-    const recommendedLevel = haircolor.recommendedLevel;
+    let hairstyleName, hairstyleDesc, haircolorName, haircolorDesc;
 
-    if (!recommendedLevel || !currentLevel) {
-        alert("画像生成に必要な髪の明るさ情報（現在または推奨）が見つかりません。");
-        return;
+    // --- 1. ヘアスタイルの決定 ---
+    if (AppState.selectedProposal.hairstyle === 'inspiration_style') {
+        // 「ご希望スタイル」が選ばれた場合
+        hairstyleName = 'inspiration_style'; // バックエンドへの識別子
+        hairstyleDesc = 'お客様のご希望のスタイル';
+        console.log("[handleImageGenerationRequest] Using: Inspiration Style");
+    } else {
+        // AI提案 (style1 or style2) が選ばれた場合
+        const style = AppState.aiProposal?.hairstyles?.[AppState.selectedProposal.hairstyle];
+        if (!style) {
+             alert("選択されたAI提案ヘアスタイルの詳細の取得に失敗しました。");
+             return;
+        }
+        hairstyleName = style.name;
+        hairstyleDesc = style.description;
+        console.log("[handleImageGenerationRequest] Using: AI Style -", hairstyleName);
     }
-    // ★★★ 2025/11/15 修正: ここまで追加 ★★★
+
+    // --- 2. ヘアカラーの決定 ---
+    if (AppState.selectedProposal.haircolor === 'inspiration_color') {
+        // 「ご希望カラー」が選ばれた場合
+        haircolorName = 'inspiration_color'; // バックエンドへの識別子
+        haircolorDesc = 'お客様のご希望のカラー';
+        console.log("[handleImageGenerationRequest] Using: Inspiration Color");
+    } else {
+        // AI提案 (color1 or color2) が選ばれた場合
+        const color = AppState.aiProposal?.haircolors?.[AppState.selectedProposal.haircolor];
+        if (!color) {
+             alert("選択されたAI提案ヘアカラーの詳細の取得に失敗しました。");
+             return;
+        }
+        haircolorName = color.name;
+        haircolorDesc = color.description;
+        console.log("[handleImageGenerationRequest] Using: AI Color -", haircolorName);
+    }
+    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
 
     try {
         if (generateBtn) generateBtn.disabled = true;
         if (generatedImageElement) generatedImageElement.style.opacity = '0.5';
         if (refinementSpinner) refinementSpinner.style.display = 'block';
         changePhase('phase6');
+        
+        // ▼▼▼ ★★★ 新規追加: ご希望写真のアップロード完了を待つ ★★★ ▼▼▼
+        // (この待機は inspirationImageTask が存在する場合のみ実行される)
+        if (AppState.inspirationImageTask && !AppState.inspirationImageUrl) {
+            console.log("[handleImageGenerationRequest] Waiting for inspiration image upload...");
+            // onProgress は設定せず、完了を待つだけ
+            const statusText = document.getElementById('inspiration-upload-status');
+            if (statusText && !AppState.inspirationImageUrl) {
+                 statusText.textContent = 'アップロード完了待機中...';
+            }
+            // await でタスク(Promise)の完了を待つ
+            await AppState.inspirationImageTask;
+            console.log("[handleImageGenerationRequest] Inspiration image upload confirmed.");
+        }
+        // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
 
         const requestData = {
             originalImageUrl: originalImageUrl,
             firebaseUid: AppState.userProfile.firebaseUid,
-            hairstyleName: hairstyle.name,
-            hairstyleDesc: hairstyle.description,
-            haircolorName: haircolor.name,
-            haircolorDesc: haircolor.description,
-            // ★★★ 2025/11/15 修正: 必須項目(JHCAレベル)を追加 ★★★
-            recommendedLevel: recommendedLevel,
-            currentLevel: currentLevel
+            
+            // ▼▼▼ ★★★ 修正: 決定した名前と説明を送信 ★★★ ▼▼▼
+            hairstyleName: hairstyleName,
+            hairstyleDesc: hairstyleDesc,
+            haircolorName: haircolorName,
+            haircolorDesc: haircolorDesc,
+            // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
+            // ▼▼▼ ★★★ 新規追加: ご要望テキストと写真URL ★★★ ▼▼▼
+            userRequestsText: AppState.userRequestsText,
+            inspirationImageUrl: AppState.inspirationImageUrl // (null または URL)
+            // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
         };
 
         const responseData = await requestImageGeneration(requestData);
@@ -605,26 +805,34 @@ async function handleColorSwitchRequest(event) {
     const refineBtn = document.getElementById('refine-image-btn');
     
     const otherColorKey = switchColorBtn.dataset.otherColorKey;
-    if (!otherColorKey || !AppState.aiProposal.haircolors[otherColorKey]) {
+    
+    // ▼▼▼ ★★★ 修正: inspiration_color キーを処理 ★★★ ▼▼▼
+    if (!otherColorKey) {
         alert("切替先のカラー情報が見つかりません。");
         return;
     }
 
-    const otherColor = AppState.aiProposal.haircolors[otherColorKey];
-    
-    // ★★★ 2025/11/15 修正: JHCAレベルスケールもプロンプトに含める ★★★
-    const recommendedLevel = otherColor.recommendedLevel;
-    if (!recommendedLevel) {
-         alert("切替先のカラーの明るさ情報(recommendedLevel)が見つかりません。");
-         return;
+    let refinementText;
+    let otherColorName;
+
+    if (otherColorKey === 'inspiration_color') {
+        refinementText = "ヘアカラーを、お客様のご希望の写真（参考画像）のカラーにしてください。";
+        otherColorName = "ご希望カラー";
+    } else {
+        const otherColor = AppState.aiProposal.haircolors[otherColorKey];
+        if (!otherColor) {
+             alert("切替先のAI提案カラー情報が見つかりません。");
+             return;
+        }
+        refinementText = `ヘアカラーを「${otherColor.name}」に変更してください。`;
+        otherColorName = otherColor.name;
     }
-    const refinementText = `ヘアカラーを「${otherColor.name}（${recommendedLevel}）」に変更してください。`;
-    // ★★★ 修正ここまで ★★★
+    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
     
     // ボタンを無効化
     if (switchColorBtn) {
         switchColorBtn.disabled = true;
-        switchColorBtn.textContent = `「${otherColor.name}」に変更中...`;
+        switchColorBtn.textContent = `「${otherColorName}」に変更中...`;
     }
     if (refineBtn) {
         refineBtn.disabled = true; // 手動微調整も無効化
@@ -889,196 +1097,39 @@ function handleProposalSelection(event) {
 }
 
 
-// ▼▼▼ ★★★ 新規: 動画録画ハンドラ ★★★ ▼▼▼
-
+// ▼▼▼ ★★★ 新規追加: ご希望写真UIリセット関数 ★★★ ▼▼▼
 /**
- * [Handler] フェーズ3の動画「撮影」ボタンクリック時
- * @param {string} itemId 
+ * [Handler] ご希望写真のUIと関連ステートをリセットする
  */
-function handleVideoRecordClick(itemId) {
-    console.log(`[handleVideoRecordClick] Clicked for ${itemId}`);
-    // 1. モーダルを表示
-    showVideoModal(itemId);
+function resetInspirationUI() {
+    console.log("[resetInspirationUI] Resetting inspiration photo UI.");
     
-    // 2. カメラの準備
-    // ▼▼▼ ★★★ 修正: 常に false (アウトカメラ) を指定 ★★★ ▼▼▼
-    const useFront = false; // (itemId === 'item-front-video');
-    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
-    const preview = document.getElementById('video-preview');
-    
-    if (!preview) {
-         alert("プレビュー要素が見つかりません。");
-         hideVideoModal();
-         return;
+    // AppStateリセット
+    AppState.inspirationImageUrl = null;
+    AppState.inspirationImageTask = null; // 進行中のタスクも破棄
+
+    // UIリセット
+    const preview = document.getElementById('inspiration-image-preview');
+    const uploadBtn = document.getElementById('inspiration-upload-btn');
+    const deleteBtn = document.getElementById('inspiration-delete-btn');
+    const statusText = document.getElementById('inspiration-upload-status');
+    const titleText = document.getElementById('inspiration-upload-title');
+    const input = document.getElementById('inspiration-image-input');
+
+    if (preview) {
+        preview.removeAttribute('src'); // プレビュー画像を削除
+        // プレビューが <img src> でない場合 (アイコンフォントなど) は
+        // preview.style.backgroundImage = 'none'; なども必要かも
     }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("このブラウザはカメラ録画に対応していません。");
-        hideVideoModal();
-        return;
+    if (titleText) titleText.textContent = '写真を選択';
+    if (statusText) statusText.textContent = 'タップして画像を選択';
+    if (uploadBtn) {
+        uploadBtn.textContent = '選択';
+        uploadBtn.style.display = 'block'; // 「選択」ボタンを再表示
+        uploadBtn.disabled = false;
     }
-
-    // 3. カメラストリームを取得してプレビューに表示
-    // (async IIFE で実行)
-    (async () => {
-        let stream = null;
-        try {
-            console.log(`[handleVideoRecordClick] Requesting camera (front: ${useFront})...`);
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    // ▼▼▼ ★★★ 修正: 常に 'environment' (アウトカメラ) を指定 ★★★ ▼▼▼
-                    facingMode: 'environment', // useFront ? 'user' : 'environment',
-                    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
-                    width: { ideal: 640 },
-                },
-                audio: false
-            });
-            
-            preview.srcObject = stream;
-            // ▼▼▼ ★★★ 修正: 常に 'scaleX(1)' (鏡写し解除) ★★★ ▼▼▼
-            preview.style.transform = 'scaleX(1)'; // useFront ? 'scaleX(-1)' : 'scaleX(1)';
-            // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
-            console.log("[handleVideoRecordClick] Camera stream attached to preview.");
-
-        } catch (err) {
-            console.error("[handleVideoRecordClick] Error accessing camera:", err);
-            let message = `カメラの起動に失敗しました: ${err.name}`;
-            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                message = "カメラへのアクセスが拒否されました。設定を確認してください。";
-            } else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
-                 // ▼▼▼ ★★★ 修正: エラーメッセージを 'アウトカメラ' に固定 ★★★ ▼▼▼
-                 message = `指定されたカメラ（アウトカメラ）が見つかりませんでした。`;
-                 // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
-            }
-            alert(message);
-            // ストリームが開いている場合は閉じる (二重確認)
-            stream?.getTracks().forEach(track => track.stop());
-            hideVideoModal();
-        }
-    })();
-}
-
-/**
- * [Handler] モーダルの「キャンセル」ボタンクリック時
- */
-function handleCancelRecording() {
-    console.log("[handleCancelRecording] User cancelled recording.");
-    hideVideoModal();
-}
-
-/**
- * [Handler] モーダルの「録画開始」ボタンクリック時
- */
-async function handleStartRecording() {
-    const modal = document.getElementById('video-recorder-modal');
-    const itemId = modal?.dataset.currentItemId;
-    
-    if (!itemId) {
-        console.error("[handleStartRecording] No currentItemId found in modal dataset.");
-        hideVideoModal();
-        return;
-    }
-    
-    // ▼▼▼ ★★★ 修正: 常に false (アウトカメラ) を指定 ★★★ ▼▼▼
-    const useFront = false; // (itemId === 'item-front-video');
-    // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
-    
-    // フェーズ3のリストアイテムUIを取得
-    const itemElement = document.getElementById(itemId);
-    const button = itemElement?.querySelector('button');
-    const iconDiv = itemElement?.querySelector('.upload-icon');
-
-    // (1) カウントダウンコールバックを定義
-    const onCountdown = (count) => {
-        // 録画UIを更新
-        updateRecordingUI('recording', count);
-    };
-
-    try {
-        // (2) UIを「録画中」にし、録画ヘルパーを呼び出す
-        updateRecordingUI('recording', 3); // '3' から開始
-        
-        // ★★★ helpers.js の recordVideo を実行 (useFront = false を渡す) ★★★
-        const videoFile = await recordVideo(useFront, onCountdown);
-        
-        // (3) 録画完了 -> UIを「処理中」に変更
-        updateRecordingUI('processing');
-        
-        if (!button || !iconDiv) {
-             console.error(`[handleStartRecording] UI elements for ${itemId} not found after recording.`);
-             hideVideoModal();
-             return;
-        }
-
-        // フェーズ3のUIを「処理中」に変更
-        button.textContent = '処理中...';
-        button.disabled = true;
-        if (iconDiv) iconDiv.classList.remove('completed'); // アイコンをリセット
-        
-        // AppStateをリセット
-        delete AppState.uploadTasks[itemId];
-        delete AppState.uploadedFileUrls[itemId];
-        checkAllFilesUploaded(false);
-
-        // (4) onProgressコールバックを定義 (アップロード用)
-        const onUploadProgress = (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            if (button) {
-                button.textContent = `ｱｯﾌﾟﾛｰﾄﾞ中 ${Math.round(progress)}%`;
-            }
-        };
-        
-        // (5) uploadTask (Promise) を AppState に保存
-        AppState.uploadTasks[itemId] = uploadFileToStorageOnly(
-            AppState.firebase.storage,
-            AppState.userProfile.firebaseUid,
-            videoFile,
-            itemId,
-            onUploadProgress // 進捗コールバックを渡す
-        )
-        .then(result => {
-            // (6) アップロード完了時 (Promise 成功)
-            console.log(`[UploadSuccess] ${itemId} (video) finished.`);
-            button.textContent = '✔️ 撮影済み';
-            button.classList.remove('btn-outline');
-            button.classList.add('btn-success');
-            if (iconDiv) iconDiv.classList.add('completed');
-            
-            AppState.uploadedFileUrls[itemId] = result.url; // URLを保存
-            checkAllFilesUploaded(areAllFilesUploaded()); // 全て揃ったか再チェック
-            
-            return result; // Promiseチェーンのために結果を返す
-
-        }).catch(uploadError => {
-            // (7) アップロード失敗時 (Promise 失敗)
-            console.error(`[UploadFailed] Error processing video file for ${itemId}:`, uploadError);
-            alert(`「${itemId}」のアップロードに失敗しました: ${uploadError.message}`);
-            
-            // UIを元に戻す
-            button.textContent = '撮影';
-            button.disabled = false;
-            button.classList.add('btn-outline');
-            button.classList.remove('btn-success');
-            if (iconDiv) iconDiv.classList.remove('completed');
-
-            // AppStateをリセット
-            delete AppState.uploadTasks[itemId];
-            delete AppState.uploadedFileUrls[itemId];
-            checkAllFilesUploaded(false);
-            
-            throw uploadError; 
-        
-        }).finally(() => {
-            // (8) 成功・失敗問わず、モーダルを閉じる
-            hideVideoModal();
-        });
-
-    } catch (recordError) {
-        // (2) の録画ヘルパー (recordVideo) が失敗した場合
-        console.error(`[handleStartRecording] Error during recording:`, recordError);
-        alert(`録画中にエラーが発生しました: ${recordError.message}`);
-        hideVideoModal();
-        updateRecordingUI('idle'); // モーダルUIをリセット
-    }
+    if (deleteBtn) deleteBtn.style.display = 'none'; // 「削除」ボタンを隠す
+    if (input) input.value = null; // ファイル入力の値をクリア
 }
 // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
 
@@ -1097,19 +1148,44 @@ function isProposalSelected() {
 
 /**
  * カラー切替ボタンのテキストと状態を、現在の選択に基づいて更新する
- * @param {string} currentSelectedColorKey - *今表示されている*画像のカラーキー (例: 'color1')
+ * @param {string} currentSelectedColorKey - *今表示されている*画像のカラーキー (例: 'color1', 'inspiration_color')
  */
 function updateColorSwitchButton(currentSelectedColorKey) {
     const switchColorBtn = document.getElementById('switch-color-btn');
     if (!switchColorBtn || !AppState.aiProposal || !AppState.aiProposal.haircolors) return;
 
-    // (1) もう一方のキーを見つける
-    const otherColorKey = currentSelectedColorKey === 'color1' ? 'color2' : 'color1';
-    const otherColor = AppState.aiProposal.haircolors[otherColorKey];
+    // (1) AI提案のカラーキー (color1, color2) を見つける
+    const aiColorKeys = Object.keys(AppState.aiProposal.haircolors);
+    
+    // (2) もう一方のキーを見つける
+    let otherColorKey, otherColorName;
 
-    if (otherColor && otherColor.name) {
+    if (currentSelectedColorKey === 'inspiration_color') {
+        // 現在「ご希望カラー」の場合 -> 「AI提案1」を提示
+        otherColorKey = aiColorKeys[0]; // 'color1'
+        otherColorName = AppState.aiProposal.haircolors[otherColorKey]?.name;
+    } else if (currentSelectedColorKey === aiColorKeys[0]) { // 'color1'
+        // 現在「AI提案1」の場合 -> 「AI提案2」を提示
+        otherColorKey = aiColorKeys[1]; // 'color2'
+        otherColorName = AppState.aiProposal.haircolors[otherColorKey]?.name;
+    } else { // 'color2'
+        // 現在「AI提案2」の場合
+        // ▼▼▼ ★★★ 修正: ご希望写真がある場合は「ご希望カラー」を提示 ★★★ ▼▼▼
+        if (AppState.inspirationImageUrl) {
+            otherColorKey = 'inspiration_color';
+            otherColorName = 'ご希望カラー';
+        } else {
+            // ご希望写真がない場合は「AI提案1」に戻る
+            otherColorKey = aiColorKeys[0]; // 'color1'
+            otherColorName = AppState.aiProposal.haircolors[otherColorKey]?.name;
+        }
+        // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+    }
+
+
+    if (otherColorKey && otherColorName) {
         // (2) ボタンのテキストとデータを設定
-        switchColorBtn.textContent = `「${otherColor.name}」に変更する`;
+        switchColorBtn.textContent = `「${otherColorName}」に変更する`;
         switchColorBtn.dataset.otherColorKey = otherColorKey;
         // (3) ボタンを表示
         switchColorBtn.style.display = 'block';

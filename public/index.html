@@ -79,6 +79,36 @@
                     <input type="radio" id="other" name="gender" value="other"> <label for="other">その他</label>
                 </div>
             </div>
+            
+            <div class="form-group">
+                <label for="user-requests">ご希望のメニューやご要望 (任意)</label>
+                <textarea id="user-requests" class="form-control" rows="4" placeholder="（例）カットとカラー希望。赤みが出ないようにしたい。"></textarea>
+            </div>
+
+            <!-- ▼▼▼ ★★★ 新規追加: ご希望写真アップロード ★★★ ▼▼▼ -->
+            <div class="form-group">
+                <label for="inspiration-image-input">ご希望のスタイル写真 (任意)</label>
+                <!-- 隠されたファイル入力 -->
+                <input type="file" id="inspiration-image-input" class="file-input" accept="image/*" hidden>
+                
+                <!-- クリック可能なアップロードUI -->
+                <div id="inspiration-upload-container" class="inspiration-upload-container" role="button" tabindex="0" aria-label="ご希望のスタイル写真をアップロード">
+                    <!-- プレビュー (srcはJSで設定) -->
+                    <img id="inspiration-image-preview" alt="ご希望のスタイル プレビュー">
+                    
+                    <div class="inspiration-upload-text">
+                        <strong id="inspiration-upload-title">写真を選択</strong>
+                        <span id="inspiration-upload-status">タップして画像を選択</span>
+                    </div>
+                    
+                    <!-- アップロードボタン (JSで制御) -->
+                    <button id="inspiration-upload-btn" class="btn-outline">選択</button>
+                    <!-- 削除ボタン (JSで制御) -->
+                    <button id="inspiration-delete-btn" class="btn-delete">削除</button>
+                </div>
+            </div>
+            <!-- ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲ -->
+
             <button id="next-to-upload-btn" class="btn-dark">撮影に進む</button>
         </div>
     </div>
@@ -90,39 +120,41 @@
              <p class="description" style="margin-bottom: 20px;">AI診断のため、指定されたアングルから撮影してください。</p>
              <div class="upload-list">
                  <div id="item-front-photo" class="upload-item">
-                     <!-- 写真: これは変更なし (inputあり) -->
-                     <input type="file" class="file-input" accept="image/*" capture="user" hidden>
+                     <!-- 写真: (iPhone向けに capture を environment に) -->
+                     <input type="file" class="file-input" accept="image/*" capture="environment" hidden>
                      <div class="upload-icon">📷</div><div class="upload-text"><strong>写真：正面</strong><span>顔がはっきりと</span></div><button class="btn-outline">撮影</button>
                  </div>
                  <div id="item-side-photo" class="upload-item">
-                     <!-- 写真: これは変更なし (inputあり) -->
+                     <!-- 写真: (変更なし) -->
                      <input type="file" class="file-input" accept="image/*" capture="environment" hidden>
                      <div class="upload-icon">📷</div><div class="upload-text"><strong>写真：サイド</strong><span>横顔と髪の長さ</span></div><button class="btn-outline">撮影</button>
                  </div>
                  <div id="item-back-photo" class="upload-item">
-                     <!-- 写真: これは変更なし (inputあり) -->
+                     <!-- 写真: (変更なし) -->
                      <input type="file" class="file-input" accept="image/*" capture="environment" hidden>
                      <div class="upload-icon">📷</div><div class="upload-text"><strong>写真：バック</strong><span>後ろ全体の髪型</span></div><button class="btn-outline">撮影</button>
                  </div>
                  <div id="item-front-video" class="upload-item">
-                     <!-- ▼▼▼ ★★★ 修正: inputを削除し、説明文を変更 ★★★ ▼▼▼ -->
-                     <!-- <input type="file" class="file-input" ... hidden> (削除) -->
+                     <!-- ▼▼▼ ★★★ 差し戻し: inputタグを復活 (iPhone向け) ★★★ ▼▼▼ -->
+                     <input type="file" class="file-input" accept="video/*" capture="environment" hidden>
                      <div class="upload-icon">🎬</div>
                      <div class="upload-text">
                          <strong>動画：正面 (3秒)</strong>
+                         <span>左右に顔を動かす</span>
                      </div>
                      <button class="btn-outline">撮影</button>
-                     <!-- ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲ -->
+                     <!-- ▲▲▲ ★★★ 差し戻しここまで ★★★ ▲▲▲ -->
                  </div>
                  <div id="item-back-video" class="upload-item">
-                     <!-- ▼▼▼ ★★★ 修正: inputを削除し、説明文を変更 ★★★ ▼▼▼ -->
-                     <!-- <input type="file" class="file-input" ... hidden> (削除) -->
+                     <!-- ▼▼▼ ★★★ 差し戻し: inputタグを復活 (iPhone向け) ★★★ ▼▼▼ -->
+                     <input type="file" class="file-input" accept="video/*" capture="environment" hidden>
                      <div class="upload-icon">🎬</div>
                      <div class="upload-text">
                          <strong>動画：バック (3秒)</strong>
+                         <span>髪全体の動き</span>
                      </div>
                      <button class="btn-outline">撮影</button>
-                     <!-- ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲ -->
+                     <!-- ▲▲▲ ★★★ 差し戻しここまで ★★★ ▲▲▲ -->
                  </div>
              </div>
              <button id="request-diagnosis-btn" class="btn-dark btn-disabled" disabled>AI診断をリクエスト</button>
@@ -172,11 +204,29 @@
              
              <div class="proposal-section">
                  <h3 class="proposal-title"><img src="images/ヘアスタイル.png" alt="" class="proposal-icon"> 似合うヘアスタイル</h3>
-                 <div id="hairstyle-proposal" class="proposal-grid"></div> <!-- ID: hairstyle-proposal -->
+                 <div id="hairstyle-proposal" class="proposal-grid">
+                     <!-- AI提案 (style1, style2) はJSでここに追加されます -->
+                     
+                     <!-- ▼▼▼ ★★★ 新規追加: ご希望スタイル ★★★ ▼▼▼ -->
+                     <div id="inspiration-style-card" class="proposal-card" data-type="hairstyle" data-key="inspiration_style" style="display: none;">
+                         <strong>お客様のご希望スタイル</strong>
+                         <p>フェーズ2でアップロードされた写真のスタイルを合成します。</p>
+                     </div>
+                     <!-- ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲ -->
+                 </div>
              </div>
              <div class="proposal-section">
                  <h3 class="proposal-title"><img src="images/ヘアカラー.png" alt="" class="proposal-icon"> 似合うヘアカラー</h3>
-                 <div id="haircolor-proposal" class="proposal-grid"></div> <!-- ID: haircolor-proposal -->
+                 <div id="haircolor-proposal" class="proposal-grid">
+                     <!-- AI提案 (color1, color2) はJSでここに追加されます -->
+                     
+                     <!-- ▼▼▼ ★★★ 新規追加: ご希望カラー ★★★ ▼▼▼ -->
+                     <div id="inspiration-color-card" class="proposal-card" data-type="haircolor" data-key="inspiration_color" style="display: none;">
+                         <strong>お客様のご希望カラー</strong>
+                         <p>フェーズ2でアップロードされた写真のカラーを合成します。</p>
+                     </div>
+                     <!-- ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲ -->
+                 </div>
              </div>
 
              <div class="proposal-section">
@@ -255,31 +305,6 @@
              </button>
          </div>
     </div>
-
-    <!-- ★★★ 新規追加: 動画撮影モーダルHTML ★★★ -->
-    <div id="video-recorder-modal">
-        <div class="video-modal-content">
-            <h3 id="video-modal-title">動画撮影（正面）</h3>
-            <p id="video-modal-description">インカメラで3秒間、顔を左右にゆっくり動かしてください。</p>
-            
-            <!-- カメラプレビュー -->
-            <video id="video-preview" autoplay playsinline muted></video>
-            
-            <!-- 録画タイマー -->
-            <div id="video-timer">3</div>
-
-            <!-- 録画ボタン -->
-            <button id="video-record-btn" class="btn-danger">
-                <div class="icon"></div>
-                <span id="video-record-btn-text">録画開始 (3秒)</span>
-            </button>
-
-            <!-- キャンセルボタン -->
-            <button id="video-cancel-btn">キャンセル</button>
-        </div>
-    </div>
-    <!-- ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲ -->
-
 
     <!-- 
       ★ 修正: main.js のみ type="module" で読み込む

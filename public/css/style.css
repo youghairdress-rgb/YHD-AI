@@ -182,6 +182,79 @@ body {
     box-shadow: 0 2px 8px rgba(45, 212, 191, 0.3);
 }
 
+
+/* ▼▼▼ ★★★ 新規追加: フェーズ2 ご希望写真アップロード ★★★ ▼▼▼ */
+.inspiration-upload-container {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 12px;
+    background-color: #f9fafb;
+    border: 1px dashed var(--border-color); /* 破線 */
+    border-radius: 14px;
+    box-sizing: border-box;
+}
+
+#inspiration-image-preview {
+    width: 70px;
+    height: 70px;
+    border-radius: 10px;
+    background-color: var(--border-color);
+    margin-right: 15px;
+    flex-shrink: 0;
+    /* プレビュー画像がコンテナに収まるように */
+    object-fit: cover; 
+    /* プレビュー画像が読み込まれるまでのアイコン */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 28px;
+    color: var(--text-color-light);
+}
+
+/* プレビュー画像が設定されたらアイコンを消す */
+#inspiration-image-preview[src] {
+    display: block;
+}
+
+.inspiration-upload-text {
+    flex-grow: 1;
+    text-align: left;
+    margin-right: 10px;
+}
+
+.inspiration-upload-text strong {
+    display: block;
+    font-weight: 600;
+    color: var(--dark-color);
+    font-size: 15px;
+    margin-bottom: 2px;
+}
+
+.inspiration-upload-text span {
+    font-size: 13px;
+    color: var(--text-color-light);
+}
+
+/* 「削除」ボタン (小さめの枠線ボタン) */
+.btn-delete {
+    background-color: white;
+    color: #ef4444; /* 赤色 */
+    border: 1px solid #fecaca; /* 薄い赤枠 */
+    padding: 6px 14px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: none; /* JSで表示制御 */
+}
+.btn-delete:hover {
+    background-color: #fef2f2; /* 薄い赤背景 */
+}
+/* ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲ */
+
+
 /* --- Phase 3 Upload Styles --- */
 .upload-list {
     margin-top: 15px;
@@ -409,6 +482,23 @@ button {
     box-shadow: 0 4px 12px rgba(45, 212, 191, 0.2); /* 影 */
     transform: none; /* 選択時は浮き上がらない */
 }
+
+/* ▼▼▼ ★★★ 新規追加: ご希望スタイルカードの特別スタイル ★★★ ▼▼▼ */
+#inspiration-style-card,
+#inspiration-color-card {
+    /* 目立たせるためにデフォルトで枠線をティファニーブルーに */
+    border-color: var(--primary-color-dark); 
+    background-color: var(--primary-color-lighter);
+}
+/* ご希望スタイルが選択された場合 (通常と同じ) */
+#inspiration-style-card.selected,
+#inspiration-color-card.selected {
+    border-color: var(--primary-color-dark);
+    background-color: var(--primary-color-lighter);
+    box-shadow: 0 4px 12px rgba(45, 212, 191, 0.2);
+}
+/* ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲ */
+
 
 .proposal-card strong {
     display: block;
@@ -668,141 +758,4 @@ button {
     width: 100%;
     margin-top: 15px;
     box-sizing: border-box; /* paddingがwidthに含まれるように */
-}
-
-
-/* ★★★ 新規追加: 動画撮影モーダル ★★★ */
-#video-recorder-modal {
-    display: none; /* JSで制御 */
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7); /* 半透明の黒背景 */
-    z-index: 1000;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    padding: 20px;
-    box-sizing: border-box;
-}
-
-#video-recorder-modal.active {
-    display: flex; /* Flexboxで中央揃え */
-    justify-content: center;
-    align-items: center;
-    opacity: 1;
-}
-
-.video-modal-content {
-    background-color: var(--card-bg);
-    padding: 20px;
-    border-radius: 16px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    width: 100%;
-    max-width: 400px;
-    text-align: center;
-    position: relative; /* スピナーやタイマーの基準 */
-}
-
-.video-modal-content h3 {
-    font-size: 20px;
-    color: var(--dark-color);
-    margin-top: 0;
-    margin-bottom: 10px;
-}
-
-.video-modal-content p {
-    font-size: 15px;
-    color: var(--text-color-light);
-    margin-bottom: 20px;
-}
-
-#video-preview {
-    width: 100%;
-    height: auto;
-    max-height: 40vh; /* 高すぎないように */
-    border-radius: 12px;
-    background-color: #000;
-    border: 1px solid var(--border-color);
-    margin-bottom: 20px;
-    /* インカメラ映像を鏡写しにする (インカメラ(user)の場合) */
-    transform: scaleX(-1);
-}
-
-#video-timer {
-    position: absolute;
-    top: 35px;
-    left: 35px;
-    background-color: rgba(217, 74, 74, 0.8);
-    color: white;
-    font-size: 24px;
-    font-weight: 700;
-    padding: 5px 10px;
-    border-radius: 8px;
-    display: none; /* JSで制御 */
-    z-index: 10;
-}
-
-/* 録画ボタン (btn-danger スタイル) */
-.btn-danger {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px; /* アイコンとテキストの間隔 */
-    width: 100%;
-    color: white;
-    font-size: 17px;
-    font-weight: 600;
-    padding: 14px 20px;
-    border: none;
-    border-radius: 12px;
-    cursor: pointer;
-    background-color: #ef4444; /* 赤色 */
-    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
-    transition: all 0.2s ease;
-    box-sizing: border-box; /* パディングを含める */
-}
-.btn-danger .icon {
-    width: 20px;
-    height: 20px;
-    background-color: white;
-    border-radius: 50%;
-    transition: border-radius 0.2s ease; /* 録画中の変形アニメーション */
-}
-/* 録画中 */
-.btn-danger.recording .icon {
-    border-radius: 4px; /* 四角に変更 */
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.5; }
-    100% { opacity: 1; }
-}
-
-
-.btn-danger:hover:not(:disabled) {
-    background-color: #dc2626; /* 濃い赤 */
-}
-
-/* キャンセルボタン (btn-secondary-white と同じスタイルを流用) */
-#video-cancel-btn {
-    display: block;
-    width: 100%;
-    margin: 15px auto 0 auto;
-    color: var(--primary-color);
-    font-size: 16px;
-    font-weight: 600;
-    padding: 13px 20px;
-    border: 1px solid var(--primary-color);
-    border-radius: 12px;
-    cursor: pointer;
-    background-color: white;
-    transition: all 0.2s ease;
-    box-sizing: border-box; /* パディングを含める */
-}
-#video-cancel-btn:hover:not(:disabled) {
-    background-color: #f8fafc;
 }
