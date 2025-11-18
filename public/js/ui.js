@@ -1,296 +1,391 @@
-import { escapeHtml, createResultItem, setTextContent } from './helpers.js';
+/**
+ * ui.js
+ * UIの表示切り替え、ローダー、結果表示など、DOM操作全般を担当
+ * (ES Module 形式)
+ */
+
+// ▼▼▼ ★★★ 修正: helpers.js (ESM) から logger をインポート ★★★ ▼▼▼
+import { logger } from './helpers.js';
+// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
+// --- DOM取得 ---
+// ▼▼▼ ★★★ 修正: DOM読み込み前に実行されるため、letで宣言のみ ★★★ ▼▼▼
+let qs, qsAll;
+let phases = {};
+let loader, loaderText;
+let errorDisplay, errorMessage, errorCloseBtn;
+let uploadPreviews = {};
+let uploadButtons = {};
+let skipInspirationBtn;
+let diagnosisResultContainer, bestColorsContainer, makeupContainer, fashionContainer, aiCommentContainer;
+let hairstylesContainer, haircolorsContainer;
+let generatedImage, generatedImageContainer, refineInput, saveButton;
+let prevBtn, nextBtn;
+// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
+// ▼▼▼ ★★★ 修正: DOM要素の取得を関数化し、main.jsから呼び出せるよう export ★★★ ▼▼▼
+/**
+ * DOM要素セレクタを初期化 (DOMContentLoaded後に呼び出す)
+ */
+export function initializeUISelectors() {
+  qs = (selector) => document.querySelector(selector);
+  qsAll = (selector) => document.querySelectorAll(selector);
+
+  phases = {
+    1: qs("#phase1"),
+    2: qs("#phase2"),
+    3: qs("#phase3"),
+    4.1: qs("#phase4-loading"),
+    4.2: qs("#phase4-result"),
+    5: qs("#phase5"),
+    6.1: qs("#phase6-loading"),
+    6.2: qs("#phase6-result"),
+  };
+
+  loader = qs("#loader");
+  loaderText = qs("#loader-text");
+
+  errorDisplay = qs("#error-display");
+  errorMessage = qs("#error-message");
+  errorCloseBtn = qs("#error-close-btn");
+
+  uploadPreviews = {
+    front: qs("#preview-front-photo"),
+    side: qs("#preview-side-photo"),
+    back: qs("#preview-back-photo"),
+    frontVideo: qs("#preview-front-video"),
+    backVideo: qs("#preview-back-video"),
+    inspiration: qs("#preview-inspiration-photo"),
+  };
+  uploadButtons = {
+    front: qs("#upload-front-photo"),
+    side: qs("#upload-side-photo"),
+    back: qs("#upload-back-photo"),
+    frontVideo: qs("#upload-front-video"),
+    backVideo: qs("#upload-back-video"),
+    inspiration: qs("#upload-inspiration-photo"),
+  };
+  skipInspirationBtn = qs("#skip-inspiration-photo");
+
+  diagnosisResultContainer = qs("#diagnosis-result-container");
+  bestColorsContainer = qs("#best-colors-container");
+  makeupContainer = qs("#makeup-container");
+  fashionContainer = qs("#fashion-container");
+  aiCommentContainer = qs("#ai-comment-container");
+
+  hairstylesContainer = qs("#hairstyles-container");
+  haircolorsContainer = qs("#haircolors-container");
+
+  generatedImage = qs("#generated-image");
+  generatedImageContainer = qs("#generated-image-container");
+  refineInput = qs("#refine-text");
+  saveButton = qs("#save-to-gallery-btn");
+
+  prevBtn = qs("#prev-btn");
+  nextBtn = qs("#next-btn");
+
+  logger.log("[UI] DOM Selectors Initialized.");
+}
+// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
 
 /**
- * 指定されたフェーズ（画面）に表示を切り替える
- * ★★★ アップグレード 提案③: フェードアニメーションに対応 ★★★
- * @param {string} phaseId 表示したいフェーズのID ('phase1', 'phase2', etc.)
+ * 指定したフェーズを表示し、他を非表示にする
+ * @param {number | string} phaseToShow - 表示するフェーズの番号 (e.g., 1, 4.1)
  */
-export function changePhase(phaseId) {
-    console.log(`[changePhase] Changing to phase: ${phaseId}`);
-    
-    // 1. まず、現在表示されている（アクティブな）フェーズを探して、非表示（opacity: 0）にする
-    const currentActivePhase = document.querySelector('.phase-container.active');
-    if (currentActivePhase) {
-        currentActivePhase.classList.remove('active');
+// ▼▼▼ ★★★ 修正: main.js (module) から呼び出せるよう export ★★★ ▼▼▼
+export function showPhase(phaseToShow) {
+  logger.log(`[UI] Showing Phase: ${phaseToShow}`);
+  Object.keys(phases).forEach((phaseKey) => {
+    if (phases[phaseKey]) {
+      phases[phaseKey].style.display = (phaseKey === String(phaseToShow)) ? "block" : "none";
     }
+  });
 
-    // 2. ターゲットのフェーズを探す
-    const targetPhase = document.getElementById(phaseId);
-    
-    if (targetPhase) {
-        // 3. ターゲットを表示（opacity: 1）にする
-        // display: block は CSS 側で .active クラスによって制御される
-        targetPhase.classList.add('active');
-        console.log(`[changePhase] Phase ${phaseId} displayed.`);
-        
-        // 画面切り替え時に最上部までスクロール
-        window.scrollTo(0, 0); 
+  // ページネーションボタンの表示制御
+  updatePagination(String(phaseToShow));
+}
+
+/**
+ * ページネーションボタン（次へ・戻る）の表示/非表示を制御
+ * @param {string} currentPhase - 現在のフェーズ番号
+ */
+function updatePagination(currentPhase) {
+  // 戻るボタンの制御
+  // ▼▼▼ ★★★ 修正: prevBtnがnullでないかチェック (エラー画像: ui.js:53) ★★★ ▼▼▼
+  if (prevBtn) {
+    if (["1", "4.1", "6.1"].includes(currentPhase)) {
+      prevBtn.style.display = "none";
     } else {
-        console.error(`[changePhase] Phase container with id "${phaseId}" not found.`);
-        // Fallback to phase1 if target is not found
-        const phase1 = document.getElementById('phase1');
-        if(phase1) phase1.classList.add('active');
+      prevBtn.style.display = "inline-block";
     }
+  } else if (currentPhase !== "1") {
+    // currentPhase 1 以外で prevBtn が null なのはおかしい
+    logger.warn(`[UI] updatePagination: prevBtn is null on phase ${currentPhase}`);
+  }
+
+  // 次へボタンの制御
+  if (nextBtn) {
+    if (["4.1", "6.1", "6.2"].includes(currentPhase)) {
+      // ローディング中、最終結果画面では「次へ」を非表示
+      nextBtn.style.display = "none";
+    } else {
+      nextBtn.style.display = "inline-block";
+    }
+  } else {
+     logger.warn(`[UI] updatePagination: nextBtn is null`);
+  }
+  // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 }
 
+/**
+ * ローダー（スピナー）の表示/非表示を切り替える
+ * @param {boolean} show - 表示するかどうか
+ * @param {string} [text=""] - ローダーに表示するテキスト
+ */
+// ▼▼▼ ★★★ 修正: main.js (module) から呼び出せるよう export ★★★ ▼▼▼
+export function toggleLoader(show, text = "") {
+  if (!loader || !loaderText) return;
+  loader.style.display = show ? "flex" : "none";
+  loaderText.textContent = text;
+}
 
 /**
- * 診断結果（フェーズ4）をHTMLに描画する
- * @param {object} result - AIの診断結果オブジェクト
+ * エラーメッセージを表示する
+ * @param {string} message - 表示するエラーメッセージ
  */
-export function displayDiagnosisResult(result) {
-    // console.log("[displayDiagnosisResult] Displaying diagnosis:", result);
-    const faceResultsContainer = document.getElementById('face-results');
-    const skeletonResultsContainer = document.getElementById('skeleton-results');
-    const personalColorResultsContainer = document.getElementById('personal-color-results');
-    // ★★★ アップグレード ステップ1: 髪の状態コンテナを取得 ★★★
-    const hairConditionResultsContainer = document.getElementById('hair-condition-results');
+// ▼▼▼ ★★★ 修正: main.js (module) から呼び出せるよう export ★★★ ▼▼▼
+export function showError(message) {
+  logger.error(`[UI Error] ${message}`);
+  if (!errorMessage || !errorDisplay) return;
+  errorMessage.textContent = message;
+  errorDisplay.style.display = "flex";
+}
 
+/**
+ * エラーメッセージを非表示にする
+ */
+function hideError() {
+  if (!errorDisplay) return;
+  errorDisplay.style.display = "none";
+}
 
-    if (faceResultsContainer) faceResultsContainer.innerHTML = ''; else console.warn("[displayDiagnosisResult] faceResultsContainer not found");
-    if (skeletonResultsContainer) skeletonResultsContainer.innerHTML = ''; else console.warn("[displayDiagnosisResult] skeletonResultsContainer not found");
-    if (personalColorResultsContainer) personalColorResultsContainer.innerHTML = ''; else console.warn("[displayDiagnosisResult] personalColorResultsContainer not found");
-    // ★★★ アップグレード ステップ1: 髪の状態コンテナをクリア ★★★
-    if (hairConditionResultsContainer) hairConditionResultsContainer.innerHTML = ''; else console.warn("[displayDiagnosisResult] hairConditionResultsContainer not found");
+/**
+ * ファイルアップロードのプレビューを更新する (画像・動画共通)
+ * @param {string} type - 'front', 'side', 'back', 'frontVideo', 'backVideo', 'inspiration'
+ * @param {string} src - 画像/動画のData URLまたはObject URL
+ * @param {boolean} isVideo - 動画ファイルかどうか
+ */
+// ▼▼▼ ★★★ 修正: main.js (module) から呼び出せるよう export ★★★ ▼▼▼
+export function updateUploadPreview(type, src, isVideo = false) {
+  const previewEl = uploadPreviews[type];
+  if (!previewEl) return;
 
+  previewEl.innerHTML = ""; // 既存のプレビューをクリア
 
-    if (!result) {
-        console.warn("[displayDiagnosisResult] No result data to display.");
-        return;
-    }
+  let mediaEl;
+  if (isVideo) {
+    mediaEl = document.createElement("video");
+    mediaEl.controls = true;
+    mediaEl.autoplay = false; // 自動再生はオフ
+    mediaEl.muted = true;
+    mediaEl.playsInline = true;
+  } else {
+    mediaEl = document.createElement("img");
+  }
+  mediaEl.src = src;
+  previewEl.appendChild(mediaEl);
+  previewEl.classList.add("uploaded");
 
-    if (result.face && faceResultsContainer) {
-        // console.log("[displayDiagnosisResult] Populating face results...");
-        const faceMap = { nose: "鼻", mouth: "口", eyes: "目", eyebrows: "眉", forehead: "おでこ" };
-        Object.entries(result.face).forEach(([key, value]) => {
-            const items = createResultItem(faceMap[key] || key, value);
-            faceResultsContainer.append(...items);
-        });
-    }
+  // 対応するボタンのテキストを変更
+  if (uploadButtons[type]) {
+    uploadButtons[type].querySelector("span").textContent = "撮り直す";
+  }
+}
 
-    if (result.skeleton && skeletonResultsContainer) {
-        // console.log("[displayDiagnosisResult] Populating skeleton results...");
-        // ★★★ アップグレード ステップ1: 骨格・ボディの項目を強化版に対応 ★★★
-        const skeletonMap = { 
-            neckLength: "首の長さ", 
-            faceShape: "顔の形", 
-            bodyLine: "ボディライン", 
-            shoulderLine: "肩のライン",
-            // ★ 新規項目
-            faceStereoscopy: "顔の立体感", 
-            bodyTypeFeature: "体型の特徴" 
+/**
+ * フェーズ4.2の診断結果UIを構築する
+ * @param {object} result - AIからの診断結果 (result オブジェクト)
+ * @param {object} proposal - AIからの提案 (proposal オブジェクト)
+ */
+// ▼▼▼ ★★★ 修正: main.js (module) から呼び出せるよう export ★★★ ▼▼▼
+export function displayDiagnosisResult(result, proposal) {
+  if (!diagnosisResultContainer || !bestColorsContainer || !makeupContainer || !aiCommentContainer) {
+    logger.error("[UI] Diagnosis result containers not found.");
+    return;
+  }
+
+  // 1. 診断結果 (result)
+  const renderResult = (data) => {
+    return Object.entries(data)
+      .map(([key, value]) => {
+        // キーを日本語に変換 (簡易版)
+        const keyMap = {
+          nose: "鼻", mouth: "口", eyes: "目", eyebrows: "眉", forehead: "おでこ",
+          neckLength: "首の長さ", faceShape: "顔型", bodyLine: "ボディライン",
+          shoulderLine: "肩のライン", faceStereoscopy: "顔の立体感", bodyTypeFeature: "体型の特徴",
+          baseColor: "ベース", season: "シーズン", brightness: "明度",
+          saturation: "彩度", eyeColor: "瞳の色",
+          quality: "髪質", curlType: "クセ", damageLevel: "ダメージ", volume: "毛量",
         };
-        Object.entries(result.skeleton).forEach(([key, value]) => {
-            // skeletonMap[key] が存在する場合のみ表示 (古い項目も新しい項目もカバー)
-            if (skeletonMap[key]) {
-                const items = createResultItem(skeletonMap[key], value);
-                skeletonResultsContainer.append(...items);
-            }
-        });
-    }
+        const title = keyMap[key] || key;
+        return `<div class="result-item"><strong>${title}:</strong> <span>${value}</span></div>`;
+      })
+      .join("");
+  };
 
-    if (result.personalColor && personalColorResultsContainer) {
-         // console.log("[displayDiagnosisResult] Populating personal color results...");
-         const colorMap = { baseColor: "ベースカラー", season: "シーズン", brightness: "明度", saturation: "彩度", eyeColor: "瞳の色" };
-         Object.entries(result.personalColor).forEach(([key, value]) => {
-             const items = createResultItem(colorMap[key] || key, value);
-             personalColorResultsContainer.append(...items);
-         });
-    }
+  diagnosisResultContainer.innerHTML = `
+    <div class="result-category">
+      <h3><i class="fas fa-user"></i> 顔の特徴</h3>
+      ${renderResult(result.face)}
+    </div>
+    <div class="result-category">
+      <h3><i class="fas fa-project-diagram"></i> 骨格</h3>
+      ${renderResult(result.skeleton)}
+    </div>
+    <div class="result-category">
+      <h3><i class="fas fa-palette"></i> パーソナルカラー</h3>
+      ${renderResult(result.personalColor)}
+    </div>
+    <div class="result-category">
+      <h3><i class="fas fa-wind"></i> 現在の髪の状態</h3>
+      ${renderResult(result.hairCondition)}
+    </div>
+  `;
 
-    // ★★★ アップグレード ステップ1: 「現在の髪の状態」を描画するロジック ★★★
-    if (result.hairCondition && hairConditionResultsContainer) {
-        // console.log("[displayDiagnosisResult] Populating hair condition results...");
-        const hairMap = {
-            quality: "髪質",
-            curlType: "クセ",
-            damageLevel: "ダメージ",
-            volume: "毛量"
-        };
-        Object.entries(result.hairCondition).forEach(([key, value]) => {
-            if (hairMap[key]) { // スキーマで定義されたキーのみ表示
-                const items = createResultItem(hairMap[key], value);
-                hairConditionResultsContainer.append(...items);
-            }
-        });
-    }
+  // 2. 似合うカラー (proposal.bestColors)
+  bestColorsContainer.innerHTML = Object.values(proposal.bestColors)
+    .map((color) => `
+      <div class="color-chip-wrapper">
+        <div class="color-chip" style="background-color: ${color.hex};"></div>
+        <span>${color.name}</span>
+      </div>
+    `)
+    .join("");
 
-     // console.log("[displayDiagnosisResult] Finished displaying results.");
+  // 3. 似合うメイク (proposal.makeup)
+  makeupContainer.innerHTML = `
+    <div class="makeup-item"><strong>アイシャドウ:</strong> <span>${proposal.makeup.eyeshadow}</span></div>
+    <div class="makeup-item"><strong>チーク:</strong> <span>${proposal.makeup.cheek}</span></div>
+    <div class="makeup-item"><strong>リップ:</strong> <span>${proposal.makeup.lip}</span></div>
+  `;
+  
+  // 4. 似合うファッション (proposal.fashion) (★新規追加)
+  fashionContainer.innerHTML = `
+    <div class="fashion-item"><strong>スタイル:</strong> <span>${proposal.fashion.recommendedStyles.join(", ")}</span></div>
+    <div class="fashion-item"><strong>アイテム:</strong> <span>${proposal.fashion.recommendedItems.join(", ")}</span></div>
+  `;
+
+  // 5. AI総評 (proposal.comment)
+  aiCommentContainer.innerHTML = `<p>${proposal.comment.replace(/\n/g, "<br>")}</p>`;
 }
 
 /**
- * 提案結果（フェーズ5）をHTMLに描画する
- * @param {object} proposal - AIの提案結果オブジェクト
- * @param {function} onProposalClick - 提案カードがクリックされたときのコールバック関数
- * @param {string | null} inspirationImageUrl - ご希望写真のURL (nullならボタンを非表示)
+ * フェーズ5の提案選択UIを構築する
+ * @param {object} proposal - AIからの提案 (proposal オブジェクト)
+ * @param {string | null} inspirationImageUrl - ご希望写真のURL (存在する場合)
  */
-export function displayProposalResult(proposal, onProposalClick, inspirationImageUrl) {
-    // console.log("[displayProposalResult] Displaying proposal:", proposal);
-    const hairstyleContainer = document.getElementById('hairstyle-proposal');
-    const haircolorContainer = document.getElementById('haircolor-proposal');
-    const bestColorsContainer = document.getElementById('best-colors-proposal');
-    const makeupContainer = document.getElementById('makeup-proposal');
-    // ★★★ アップグレード 提案①: ファッション提案コンテナを取得 ★★★
-    const fashionContainer = document.getElementById('fashion-proposal');
+// ▼▼▼ ★★★ 修正: main.js (module) から呼び出せるよう export ★★★ ▼▼▼
+export function displayProposal(proposal, inspirationImageUrl = null) {
+  if (!hairstylesContainer || !haircolorsContainer) {
+    logger.error("[UI] Proposal containers not found.");
+    return;
+  }
 
-    if (hairstyleContainer) hairstyleContainer.innerHTML = ''; else console.warn("[displayProposalResult] hairstyleContainer not found");
-    if (haircolorContainer) haircolorContainer.innerHTML = ''; else console.warn("[displayProposalResult] haircolorContainer not found");
-    if (bestColorsContainer) bestColorsContainer.innerHTML = ''; else console.warn("[displayDiagnosisResult] bestColorsContainer not found");
-    if (makeupContainer) makeupContainer.innerHTML = ''; else console.warn("[displayProposalResult] makeupContainer not found");
-    // ★★★ アップグレード 提案①: ファッション提案コンテナをクリア ★★★
-    if (fashionContainer) fashionContainer.innerHTML = ''; else console.warn("[displayProposalResult] fashionContainer not found");
-    setTextContent('top-stylist-comment-text', '');
-    
+  // 既存のコンテンツをクリア
+  hairstylesContainer.innerHTML = "";
+  haircolorsContainer.innerHTML = "";
 
-    if (!proposal) {
-        console.warn("[displayProposalResult] No proposal data to display.");
-        return;
-    }
+  // 1. ヘアスタイル提案 (style1, style2)
+  Object.entries(proposal.hairstyles).forEach(([key, style]) => {
+    const styleCard = `
+      <div class="style-card" id="${key}-card" data-style-name="${style.name}" data-style-desc="${style.description}">
+        <h3>${style.name}</h3>
+        <p>${style.description}</p>
+        <div class="selected-indicator"><i class="fas fa-check-circle"></i></div>
+      </div>
+    `;
+    hairstylesContainer.innerHTML += styleCard;
+  });
 
-    if (proposal.hairstyles && hairstyleContainer) {
-        // console.log("[displayProposalResult] Populating hairstyles...");
-        Object.entries(proposal.hairstyles).forEach(([key, style]) => {
-            const card = document.createElement('div');
-            card.className = 'proposal-card';
-            card.dataset.type = 'hairstyle';
-            card.dataset.key = key;
-            card.innerHTML = `<strong>${escapeHtml(style.name)}</strong><p>${escapeHtml(style.description)}</p>`;
-            card.addEventListener('click', onProposalClick); // 渡されたハンドラを設定
-            hairstyleContainer.appendChild(card);
-        });
-    }
+  // 2. ヘアカラー提案 (color1, color2)
+  Object.entries(proposal.haircolors).forEach(([key, color]) => {
+    const colorCard = `
+      <div class="color-card" id="${key}-card" data-color-name="${color.name}" data-color-desc="${color.description}">
+        <h3>${color.name}</h3>
+        <p>${color.description}</p>
+        <div class="selected-indicator"><i class="fas fa-check-circle"></i></div>
+      </div>
+    `;
+    haircolorsContainer.innerHTML += colorCard;
+  });
 
-    // ▼▼▼ ★★★ 新規追加: ご希望スタイルカードの表示制御 ★★★ ▼▼▼
-    const inspStyleCard = document.getElementById('inspiration-style-card');
-    if (inspStyleCard) {
-        if (inspirationImageUrl) {
-            console.log("[displayProposalResult] Inspiration image found, showing style card.");
-            inspStyleCard.style.display = 'block';
-            inspStyleCard.addEventListener('click', onProposalClick);
-        } else {
-            console.log("[displayProposalResult] No inspiration image, hiding style card.");
-            inspStyleCard.style.display = 'none';
-        }
-    }
-    // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
+  // ▼▼▼ ★★★ ここから修正 ★★★ ▼▼▼
+  // 3. ご希望写真がアップロードされている場合、選択肢として追加
+  if (inspirationImageUrl) {
+    logger.log("[UI] Inspiration image URL found, adding inspiration cards.");
 
-    if (proposal.haircolors && haircolorContainer) {
-        // console.log("[displayProposalResult] Populating haircolors...");
-        Object.entries(proposal.haircolors).forEach(([key, color]) => {
-            const card = document.createElement('div');
-            card.className = 'proposal-card';
-            card.dataset.type = 'haircolor';
-            card.dataset.key = key;
-            card.innerHTML = `<strong>${escapeHtml(color.name)}</strong><p>${escapeHtml(color.description)}</p>`;
-            card.addEventListener('click', onProposalClick); // 渡されたハンドラを設定
-            haircolorContainer.appendChild(card);
-        });
-    }
+    // ご希望のヘアスタイル カード
+    const inspirationStyleCard = `
+      <div class="style-card inspiration-card" id="select-inspiration-style" data-style-name="inspiration_style" data-style-desc="ご希望の写真のスタイル">
+        <img src="${inspirationImageUrl}" alt="ご希望の写真" class="inspiration-preview">
+        <h3>ご希望のヘアスタイル</h3>
+        <p>アップロードした写真を基にします</p>
+        <div class="selected-indicator"><i class="fas fa-check-circle"></i></div>
+      </div>
+    `;
+    hairstylesContainer.innerHTML += inspirationStyleCard;
 
-    // ▼▼▼ ★★★ 新規追加: ご希望カラーカードの表示制御 ★★★ ▼▼▼
-    const inspColorCard = document.getElementById('inspiration-color-card');
-    if (inspColorCard) {
-        if (inspirationImageUrl) {
-            console.log("[displayProposalResult] Inspiration image found, showing color card.");
-            inspColorCard.style.display = 'block';
-            inspColorCard.addEventListener('click', onProposalClick);
-        } else {
-            console.log("[displayProposalResult] No inspiration image, hiding color card.");
-            inspColorCard.style.display = 'none';
-        }
-    }
-    // ▲▲▲ ★★★ 追加ここまで ★★★ ▲▲▲
-
-
-    if (proposal.bestColors && bestColorsContainer) {
-        // console.log("[displayProposalResult] Populating best colors...");
-        Object.values(proposal.bestColors).forEach(color => {
-            if (!color || !color.name || !color.hex) {
-                 console.warn("[displayProposalResult] Invalid bestColor item:", color);
-                 return;
-            }
-            const item = document.createElement('div');
-            item.className = 'color-swatch-item';
-            const circle = document.createElement('div');
-            circle.className = 'color-swatch-circle';
-            circle.style.backgroundColor = color.hex.match(/^#[0-9a-fA-F]{6}$/) ? color.hex : '#ccc';
-            const name = document.createElement('span');
-            name.className = 'color-swatch-name';
-            name.textContent = escapeHtml(color.name);
-            item.appendChild(circle);
-            item.appendChild(name);
-            bestColorsContainer.appendChild(item);
-        });
-    }
-
-    if (proposal.makeup && makeupContainer) {
-        // console.log("[displayProposalResult] Populating makeup...");
-        const makeupMap = { eyeshadow: "アイシャドウ", cheek: "チーク", lip: "リップ" };
-        Object.entries(proposal.makeup).forEach(([key, value]) => {
-            const items = createResultItem(makeupMap[key] || key, value); 
-            items[0].className = 'makeup-item-label'; 
-            items[1].className = 'makeup-item-value';
-            makeupContainer.append(...items);
-        });
-    }
-
-    // ★★★ アップグレード 提案①: ファッション提案を描画 ★★★
-    if (proposal.fashion && fashionContainer) {
-        // console.log("[displayProposalResult] Populating fashion...");
-        if (proposal.fashion.recommendedStyles && proposal.fashion.recommendedStyles.length > 0) {
-            const items = createResultItem("似合うスタイル", proposal.fashion.recommendedStyles.join(' / ')); 
-            items[0].className = 'makeup-item-label'; 
-            items[1].className = 'makeup-item-value';
-            fashionContainer.append(...items);
-        }
-        if (proposal.fashion.recommendedItems && proposal.fashion.recommendedItems.length > 0) {
-            const items = createResultItem("似合うアイテム", proposal.fashion.recommendedItems.join(' / ')); 
-            items[0].className = 'makeup-item-label'; 
-            items[1].className = 'makeup-item-value';
-            fashionContainer.append(...items);
-        }
-    }
-
-    if (proposal.comment) {
-         setTextContent('top-stylist-comment-text', proposal.comment);
-    }
-     // console.log("[displayProposalResult] Finished displaying proposals.");
+    // ご希望のヘアカラー カード
+    const inspirationColorCard = `
+      <div class="color-card inspiration-card" id="select-inspiration-color" data-color-name="inspiration_color" data-color-desc="ご希望の写真のカラー">
+        <img src="${inspirationImageUrl}" alt="ご希望の写真" class="inspiration-preview">
+        <h3>ご希望のヘアカラー</h3>
+        <p>アップロードした写真を基にします</p>
+        <div class="selected-indicator"><i class="fas fa-check-circle"></i></div>
+      </div>
+    `;
+    haircolorsContainer.innerHTML += inspirationColorCard;
+  }
+  // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 }
 
 /**
- * フェーズ3の「AI診断をリクエスト」ボタンの有効/無効を切り替える
- * @param {boolean} allUploaded 
+ * フェーズ6.2の生成結果UIを更新する
+ * @param {string} base64Data - 生成された画像のBase64データ
+ * @param {string} mimeType - 生成された画像のMIMEタイプ
  */
-export function checkAllFilesUploaded(allUploaded) {
-    const requestBtn = document.getElementById('request-diagnosis-btn');
+// ▼▼▼ ★★★ 修正: main.js (module) から呼び出せるよう export ★★★ ▼▼▼
+export function displayGeneratedImage(base64Data, mimeType) {
+  if (!generatedImage || !generatedImageContainer) {
+    logger.warn("[UI] displayGeneratedImage: DOM elements not found."); // ★ null チェック強化
+    return;
+  }
 
-    if (requestBtn) {
-        requestBtn.disabled = !allUploaded;
-        requestBtn.classList.toggle('btn-disabled', !allUploaded);
-        // if (allUploaded) console.log("[checkAllFilesUploaded] All files ready, button enabled.");
-    }
+  const dataUrl = `data:${mimeType};base64,${base64Data}`;
+  generatedImage.src = dataUrl;
+  generatedImageContainer.style.display = "block"; // コンテナを表示
+  refineInput.value = ""; // 微調整テキストをクリア
+  saveButton.disabled = false; // 保存ボタンを有効化
+  logger.log("[UI] Generated image displayed.");
 }
 
-/**
- * フェーズ5の「合成画像を作成」ボタンの有効/無効を切り替える
- * @param {boolean} bothSelected 
- */
-export function checkProposalSelection(bothSelected) {
-    const generateBtn = document.getElementById('next-to-generate-btn');
-
-    if (generateBtn) {
-        generateBtn.disabled = !bothSelected;
-        generateBtn.classList.toggle('btn-disabled', !bothSelected);
-         // if (bothSelected) console.log("[checkProposalSelection] Both selected, button enabled.");
-    }
+// --- UI初期化 ---
+// ▼▼▼ ★★★ 修正: export して main.js から呼び出す ★★★ ▼▼▼
+export function initializeUI() {
+  // エラー表示の閉じるボタン
+  if (errorCloseBtn) {
+    errorCloseBtn.addEventListener("click", hideError);
+  } else {
+    logger.warn("[UI] errorCloseBtn not found during initialization.");
+  }
+  // 初期フェーズを表示
+  // ▼▼▼ ★★★ 修正: main.js からキックされるため、ここでは実行しない ★★★ ▼▼▼
+  // showPhase(1);
 }
+// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 
-/**
- * 画像キャプチャ中のローディングテキストを更新する
- * @param {HTMLElement} element 
- * @param {string} text 
- */
-export function updateCaptureLoadingText(element, text) {
-    if (element) element.textContent = text;
-    console.log(`[CaptureStatus] ${text}`);
-}
+// ▼▼▼ ★★★ 修正: DOMContentLoaded を待つ必要があるため、即時実行を削除 ★★★ ▼▼▼
+// // 初期化実行
+// initializeUI();
+// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲

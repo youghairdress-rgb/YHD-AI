@@ -545,23 +545,29 @@ export const generateHairstyleImage = onRequest(
           prompt += `* (参考画像なし)\n`;
       }
       
+      // ★ 変更点: textPrompt を新しく定義
+      let textPrompt = '';
       if (userRequestsText && userRequestsText.trim() !== "") {
-          prompt += `\n**顧客の事前要望 (テキスト):**\n* "${userRequestsText}"\n`;
+        textPrompt = `* **テキスト要望:** 【重要】"${userRequestsText}" という要望を最優先で考慮してください。`;
+      } else {
+        textPrompt = `* **テキスト要望:** 特になし`;
       }
+
 
       prompt += `
 **マスク:**
 * [マスクは添付しない]
 * **画像1 (ベース画像)** の顔領域を自動検出し、その顔を**一切変更せず**、髪型だけをインペインティングすること。
 
-**指示:**
+**指示 (優先順位順):**
 1.  **品質:** masterpiece, best quality, photorealistic hair, ultra realistic, lifelike hair texture, individual hair strands visible
-2.  ${stylePrompt}
-3.  ${colorPrompt}
-4.  **光:** **画像1 (ベース画像)** の照明と一致させること。
+2.  ${textPrompt}
+3.  ${stylePrompt}
+4.  ${colorPrompt}
+5.  **光:** **画像1 (ベース画像)** の照明と一致させること。
 
 **【ルール】:**
-* もし「顧客の事前要望 (テキスト)」があり、上記指示（スタイル/カラー）と矛盾しない場合は、それも考慮してください。
+* **指示 2 (テキスト要望)** と **指示 3 (スタイル)** / **指示 4 (カラー)** が矛盾する場合（例: テキスト要望が「短く」で、スタイルが「ロング」の場合）、**指示 2 (テキスト要望) を優先**し、スタイル/カラー指示を調整してください。
 * **画像1 (ベース画像)** の顔、肌、背景を絶対に合成しないでください。
 
 **ネガティブプロンプト:**

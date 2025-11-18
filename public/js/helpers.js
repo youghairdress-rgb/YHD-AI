@@ -1,3 +1,18 @@
+// ▼▼▼ ★★★ 修正: main.js, api.js からインポートできるよう logger を定義し、export ★★★ ▼▼▼
+export const logger = {
+  log: (...args) => {
+    console.log("[YHD App]", ...args);
+  },
+  warn: (...args) => {
+    console.warn("[YHD App]", ...args);
+  },
+  error: (...args) => {
+    console.error("[YHD App]", ...args);
+  },
+};
+// ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
+
 // --- 汎用ヘルパー関数 (依存なし) ---
 
 /**
